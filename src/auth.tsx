@@ -14,9 +14,21 @@ function storedUser(): User | null {
   try { return JSON.parse(localStorage.getItem('kc_user') || 'null') } catch { return null }
 }
 
+/** A user object we can safely render (role/name are used for nav and initials). */
+function isValidUser(u: unknown): u is User {
+  const x = u as User | null
+  return !!x && typeof x === 'object' && typeof x.role === 'string' && typeof x.name === 'string'
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Token is restored by api.ts; the user record rides along in localStorage.
-  const [user, setUser] = useState<User | null>(api.hasToken() ? storedUser() : null)
+  // A half-written or stale `kc_user` must never take the app down — treat it as logged out.
+  const [user, setUser] = useState<User | null>(() => {
+    if (!api.hasToken()) return null
+    const u = storedUser()
+    if (!isValidUser(u)) { localStorage.removeItem('kc_user'); return null }
+    return u
+  })
 
   const login = async (username: string, password: string) => {
     const r = await authApi.login(username, password, 'hospital')

@@ -30,7 +30,8 @@ export default function PatientProfile() {
   const walletTxs: Any[] = b.walletTxs || []
   const activity: Any[] = b.activity || []
   const age = p.dob ? new Date().getFullYear() - Number(p.dob.slice(0, 4)) : '—'
-  const isRecords = user.role === 'Records Officer' || user.role.startsWith('Hospital') || user.role.startsWith('Super')
+  const role = user?.role || ''
+  const isRecords = role === 'Records Officer' || role.startsWith('Hospital') || role.startsWith('Super')
 
   const setStatus = async (status: 'Active' | 'Inactive') => {
     try { await patientApi.setStatus(p.id, status); setErr(''); refetch() }

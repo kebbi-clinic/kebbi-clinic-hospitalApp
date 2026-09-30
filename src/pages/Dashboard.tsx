@@ -10,11 +10,12 @@ type Any = Record<string, any>
 export default function Dashboard() {
   const { user } = useAuth()
   const { data, loading, error } = useFetch<Any>(paths.dashboard)
-  const role = user.role
+  const role = user?.role || ''
+  const name = user?.name || 'Staff'
   return (
     <Layout title="Dashboard">
       <div className="page-head">
-        <h2>Good day, {user.name.split(' ').slice(0, 2).join(' ')} 👋</h2>
+        <h2>Good day, {name.split(' ').slice(0, 2).join(' ')} 👋</h2>
         <div className="sub">{role} dashboard — live data from the Kebbi Clinic backend</div>
       </div>
       {loading && <div className="muted">Loading…</div>}

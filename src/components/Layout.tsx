@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Icon } from './ui'
 import { useAuth } from '../auth'
@@ -76,10 +76,17 @@ export function Layout({ title, children }: { title: string; children: React.Rea
   const loc = useLocation()
   const nav = useNavigate()
   const { user, logout } = useAuth()
-  const role = user.role as Role
+  /* Defensive: if the render somehow runs without a session (stale storage,
+     expired token), bounce to login instead of dereferencing `user.role`. */
+  const role = (user?.role || '') as Role
   const { data: notifs = [], refetch: refetchNotifs } = useFetch<Notif[]>(paths.notifications)
   const sections = NAV[role] || []
-  const initials = user.name.split(' ').slice(0, 2).map((w) => w[0]).join('')
+  const initials = useMemo(
+    () => (user?.name || '?').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase(),
+    [user?.name],
+  )
+
+  useEffect(() => { if (!user) nav('/login', { replace: true }) }, [user, nav])
 
   /* Join this staff member's role-room once so targeted events reach them. */
   useEffect(() => { subscribeRole(role) }, [role])
@@ -137,7 +144,7 @@ export function Layout({ title, children }: { title: string; children: React.Rea
         <div className="user-box">
           <div className="avatar">{initials}</div>
           <div className="who">
-            <div className="n">{user.name}</div>
+            <div className="n">{user?.name || 'Staff'}</div>
             <div className="r">{role}</div>
           </div>
           <button title="Log out" onClick={() => { logout(); nav('/login') }} style={{ marginLeft: 'auto', color: '#9dc3ea', background: 'none', border: 'none', cursor: 'pointer' }}><Icon name="logout" /></button>

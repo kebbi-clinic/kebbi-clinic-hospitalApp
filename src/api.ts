@@ -63,19 +63,37 @@ export const api = {
 
 let socket: Socket | null = null
 
-/** One shared Socket.IO connection for the whole app. */
+/** One shared Socket.IO connection for the whole app.
+ *  Reconnection is retried forever and errors are swallowed — real-time is a
+ *  bonus layer, so a flaky network (or a cold backend on a reload) must never
+ *  take a screen down. */
 export function getSocket(): Socket {
   /* The login JWT rides the handshake so the backend marks this staff member
      online for the admin console's live presence view. */
-  if (!socket) socket = ioClient(BASE, { transports: ['websocket', 'polling'], auth: { token: token || undefined } })
+  if (!socket) {
+    socket = ioClient(BASE, {
+      transports: ['websocket', 'polling'],
+      auth: { token: token || undefined },
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 10_000,
+    })
+    socket.on('connect_error', (e) => console.warn('[socket] connection error:', e.message))
+  }
   return socket
 }
 
 /** Join this user's role-room so role-targeted events (notifications) arrive. */
 export function subscribeRole(role: string) {
-  const s = getSocket()
-  if (s.connected) s.emit('subscribe', role)
-  else s.on('connect', () => s.emit('subscribe', role))
+  if (!role) return
+  try {
+    const s = getSocket()
+    if (s.connected) s.emit('subscribe', role)
+    else s.on('connect', () => s.emit('subscribe', role))
+  } catch (e) {
+    console.warn('[socket] subscribe failed:', e)
+  }
 }
 
 /** Every server event the app reacts to. */

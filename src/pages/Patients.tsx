@@ -15,7 +15,8 @@ export default function Patients() {
   const nav = useNavigate()
   const { user } = useAuth()
   const { data: list = [], refetch } = useFetch<Patient[]>(paths.patients)
-  const canStartVisit = user.role === 'Records Officer' || user.role === 'Doctor'
+  const role = user?.role || ''
+  const canStartVisit = role === 'Records Officer' || role === 'Doctor'
 
   const startVisit = async () => {
     if (!visitFor) return
@@ -31,7 +32,7 @@ export default function Patients() {
   return (
     <Layout title="Patients">
       <PageHead title="Patients" sub="One permanent record per patient — search before registering. Returning patients start a NEW VISIT, not a new patient.">
-        {user.role === 'Records Officer' && <Link to="/register" className="btn primary">+ Register New Patient</Link>}
+        {role === 'Records Officer' && <Link to="/register" className="btn primary">+ Register New Patient</Link>}
       </PageHead>
       <Card title="Search patients" className="mb">
         <div className="search-row">

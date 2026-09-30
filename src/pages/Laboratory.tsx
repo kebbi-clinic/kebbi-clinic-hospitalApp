@@ -41,7 +41,7 @@ export default function Laboratory() {
   return (
     <Layout title="Laboratory">
       <PageHead title="Laboratory Investigations" sub="Requests from doctors arrive here in real time. Upload result images linked to patient, visit and requesting doctor.">
-        <span className="muted">Signed in as {user.name}</span>
+        <span className="muted">Signed in as {user?.name || 'Staff'}</span>
       </PageHead>
       <div className="grid cols-4 mb">
         <Card><div className="stat"><div className="ic amber"><Badge tone="amber">Pending</Badge></div><div><div className="v">{s.pending}</div><div className="l">Pending Requests</div></div></div></Card>
