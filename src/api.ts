@@ -63,19 +63,45 @@ export const api = {
 
 let socket: Socket | null = null
 
+/* Realtime is opt-in via VITE_SOCKET_URL and is OFF by default.
+ *
+ * The API is deployed as a Vercel /api function, which cannot host WebSocket
+ * upgrades — every attempt failed and, with reconnectionAttempts: Infinity,
+ * retried forever. That is the `[socket] connection error` spam in the console.
+ * With no VITE_SOCKET_URL set we never open a connection at all; screens fall
+ * back to their normal fetch-on-mount / fetch-on-navigate behaviour. Point
+ * VITE_SOCKET_URL at a long-lived Socket.IO host (the API run via `npm start`
+ * on Railway/Render/Fly) to switch realtime back on — no code change needed. */
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL as string | undefined
+export const REALTIME_ENABLED = !!SOCKET_URL
+
+/* Inert stand-in so every call site (on/off/emit/connected) keeps working. */
+const inertSocket = {
+  connected: false,
+  on: () => inertSocket,
+  once: () => inertSocket,
+  off: () => inertSocket,
+  emit: () => inertSocket,
+  connect: () => inertSocket,
+  disconnect: () => inertSocket,
+} as unknown as Socket
+
 /** One shared Socket.IO connection for the whole app.
- *  Reconnection is retried forever and errors are swallowed — real-time is a
- *  bonus layer, so a flaky network (or a cold backend on a reload) must never
- *  take a screen down. */
+ *  Reconnection is retried a bounded number of times and errors are swallowed —
+ *  real-time is a bonus layer, so a flaky network (or a cold backend on a
+ *  reload) must never take a screen down. */
 export function getSocket(): Socket {
+  if (!SOCKET_URL) return inertSocket
   /* The login JWT rides the handshake so the backend marks this staff member
      online for the admin console's live presence view. */
   if (!socket) {
-    socket = ioClient(BASE, {
+    socket = ioClient(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       auth: { token: token || undefined },
       reconnection: true,
-      reconnectionAttempts: Infinity,
+      /* Bounded, not Infinity: a host that cannot serve websockets should not
+         keep retrying for the lifetime of the page. */
+      reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 10_000,
     })
