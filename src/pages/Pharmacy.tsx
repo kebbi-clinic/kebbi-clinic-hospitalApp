@@ -24,9 +24,15 @@ export default function Pharmacy() {
     setBusy(true); setErr('')
     try {
       const items = dispense.items.filter((i) => sel[i.drugId]).map((i) => ({ drugId: i.drugId, qty: i.qty }))
-      if (!items.length) { setErr('Select at least one drug to dispense.'); return }
+      if (!items.length) { setErr('Select at least one drug to dispense.'); setBusy(false); return }
       const res = await prescriptionApi.dispense(dispense.id, { method, items })
-      setOk(`Dispensed — ₦${res.total.toLocaleString()} recorded. ${method === 'Wallet' ? `Wallet balance: ₦${res.walletBalance.toLocaleString()}.` : ''}`)
+      /* The cost is always taken from the wallet first; any shortfall is raised
+         as a pending payment for the accountant. */
+      const parts = [`Dispensed — ₦${res.total.toLocaleString()} recorded.`]
+      parts.push(`₦${res.debitedFromWallet.toLocaleString()} taken from the wallet — balance ₦${res.walletBalance.toLocaleString()}.`)
+      if (res.outstanding > 0) parts.push(`₦${res.outstanding.toLocaleString()} is still outstanding — the accountant has been notified.`)
+      if (res.shortages?.length) parts.push(`Short stock: ${res.shortages.join('; ')}.`)
+      setOk(parts.join(' '))
       setDispense(null)
       refetch()
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
@@ -43,7 +49,14 @@ export default function Pharmacy() {
           <tbody>{rxs.map((p) => (
             <tr key={p.id}>
               <td>{p.id}</td><td>{p.patientName}<div className="muted">{p.patientId}</div></td><td>{p.doctor}</td><td>{p.visitId}</td>
-              <td>{p.items.map((i) => `${i.drug} ×${i.qty}`).join(', ')}</td>
+              <td>
+                  {p.items.map((i) => (
+                    <div key={i.drugId}>
+                      <b>{i.drug}</b> ×{i.qty}
+                      <span className="muted"> — {i.route || 'Oral'} · {i.frequency || 'Daily'} · {i.duration || 1}d</span>
+                    </div>
+                  ))}
+                </td>
               <td className="money">{naira(p.items.reduce((s, i) => s + i.qty * i.price, 0))}</td>
               <td><Badge tone={statusTone(p.status)}>{p.status}</Badge></td>
               <td className="right">{p.status === 'Pending' && <button className="btn green sm" onClick={() => open(p)}>Dispense</button>}</td>
@@ -56,11 +69,17 @@ export default function Pharmacy() {
           footer={<><button className="btn ghost" onClick={() => setDispense(null)}>Cancel</button><button className="btn green" disabled={busy} onClick={dispenseNow}>{busy ? 'Dispensing…' : 'Dispense & Record Payment'}</button></>}>
           {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th></th><th>Drug</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+            <thead><tr><th></th><th>Drug</th><th>Route</th><th>Frequency</th><th>Duration</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
             <tbody>{dispense.items.map((i) => (
               <tr key={i.drugId}>
                 <td><input type="checkbox" checked={sel[i.drugId] !== false} onChange={(e) => setSel({ ...sel, [i.drugId]: e.target.checked })} /></td>
-                <td>{i.drug}</td><td>{i.qty}</td><td>{naira(i.price)}</td><td className="money">{naira(i.qty * i.price)}</td>
+                <td>{i.drug}</td>
+                <td>{i.route || 'Oral'}</td>
+                <td>{i.frequency || 'Daily'}</td>
+                <td>{i.duration || 1}d</td>
+                <td>{i.qty}</td>
+                <td>{naira(i.price)}</td>
+                <td className="money">{naira(i.qty * i.price)}</td>
               </tr>
             ))}
             </tbody>

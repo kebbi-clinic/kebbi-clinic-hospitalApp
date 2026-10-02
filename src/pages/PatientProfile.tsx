@@ -7,7 +7,7 @@ import { useFetch, fileUrl } from '../api'
 import { paths, patientApi } from '../endpoints'
 import type { Patient } from '../data'
 
-const TABS = ['Overview', 'Visits', 'Medical History', 'Investigations', 'Prescriptions', 'Pharmacy', 'Payments', 'Wallet', 'Activity']
+const TABS = ['Overview', 'Visits', 'Medical History', 'Investigations', 'Prescriptions', 'Procedures', 'Pharmacy', 'Payments', 'Wallet', 'Activity']
 type Any = Record<string, any>
 
 export default function PatientProfile() {
@@ -16,6 +16,7 @@ export default function PatientProfile() {
   const { data: b, error, loading, refetch } = useFetch<Any>(paths.patient(id || ''))
   const [tab, setTab] = useState('Overview')
   const [err, setErr] = useState('')
+  const [note, setNote] = useState('')
 
   if (loading || !b) return <Layout title="Patient Profile"><div className="muted">Loading…</div></Layout>
   if (error) return <Layout title="Patient Profile"><div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{error} — <Link to="/patients">← Back to patients</Link></div></Layout>
@@ -29,13 +30,30 @@ export default function PatientProfile() {
   const payments: Any[] = b.payments || []
   const walletTxs: Any[] = b.walletTxs || []
   const activity: Any[] = b.activity || []
+  const procedures: Any[] = p.procedures || []
   const age = p.dob ? new Date().getFullYear() - Number(p.dob.slice(0, 4)) : '—'
   const role = user?.role || ''
   const isRecords = role === 'Records Officer' || role.startsWith('Hospital') || role.startsWith('Super')
+  /* Activation is a Records-Officer action; the server refuses anyone else. */
+  const isRecordsOfficer = role === 'Records Officer'
+  const [busy, setBusy] = useState(false)
 
   const setStatus = async (status: 'Active' | 'Inactive') => {
     try { await patientApi.setStatus(p.id, status); setErr(''); refetch() }
     catch (e) { setErr((e as Error).message) }
+  }
+
+  /* Activating charges the configured activation fee to the patient's wallet. */
+  const activate = async () => {
+    setBusy(true); setErr('')
+    try {
+      const r = await patientApi.activate(p.id)
+      setErr('')
+      refetch()
+      setNote(r.activationFee > 0
+        ? `Patient activated. Activation fee ₦${Number(r.activationFee).toLocaleString()} taken from the wallet — new balance ₦${Number(r.wallet).toLocaleString()}.`
+        : 'Patient activated.')
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
   return (
@@ -57,13 +75,16 @@ export default function PatientProfile() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {p.status === 'Active'
                 ? <button className="btn ghost sm" onClick={() => setStatus('Inactive')}>Mark Inactive</button>
-                : <button className="btn green sm" onClick={() => setStatus('Active')}>Mark Active</button>}
-              {err && <span className="muted" style={{ fontSize: 11, maxWidth: 140 }}>{err}</span>}
-              <span className="muted" style={{ fontSize: 11, maxWidth: 160 }}>Status changes never delete history.</span>
+                : isRecordsOfficer && <button className="btn green sm" disabled={busy} onClick={activate}>{busy ? 'Activating…' : 'Activate Patient'}</button>}
+              {err && <span className="muted" style={{ fontSize: 11, maxWidth: 200 }}>{err}</span>}
+              <span className="muted" style={{ fontSize: 11, maxWidth: 200 }}>
+                {isRecordsOfficer ? 'Only the Records Officer can activate. Status changes never delete history.' : 'Only the Records Officer can activate a patient.'}
+              </span>
             </div>
           )}
         </div>
       </Card>
+      {note && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{note}</div>}
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'Overview' && (
         <div className="grid cols-2">
@@ -125,22 +146,65 @@ export default function PatientProfile() {
       {tab === 'Prescriptions' && (
         <Card title="Prescriptions">
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>RX</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
-            <tbody>{prescriptions.map((r: Any) => (
-              <tr key={r.id}><td>{r.id}</td><td>{r.createdAt}</td><td>{(r.items || []).map((i: Any) => `${i.drug} ×${i.qty}`).join(', ')}</td>
-                <td className="money">{naira((r.items || []).reduce((s: number, i: Any) => s + i.qty * i.price, 0))}</td><td><Badge tone={statusTone(r.status || '')}>{r.status}</Badge></td></tr>
-            ))}</tbody>
+            <thead><tr><th>RX</th><th>Date</th><th>Drug</th><th>Route</th><th>Frequency</th><th>Duration</th><th>Qty</th><th>Total</th><th>Status</th></tr></thead>
+            <tbody>
+              {prescriptions.length === 0 && <tr><td colSpan={9} className="muted">No prescriptions yet.</td></tr>}
+              {prescriptions.flatMap((r: Any) => ((r.items || []).length ? r.items : [{}]).map((i: Any, idx: number) => (
+                <tr key={`${r.id}-${idx}`}>
+                  <td>{idx === 0 ? r.id : ''}</td>
+                  <td>{idx === 0 ? r.createdAt : ''}</td>
+                  <td>{i.drug || '—'}</td>
+                  <td>{i.route || '—'}</td>
+                  <td>{i.frequency || '—'}</td>
+                  <td>{i.duration ? `${i.duration} day${Number(i.duration) === 1 ? '' : 's'}` : '—'}</td>
+                  <td>{i.qty ?? '—'}</td>
+                  <td className="money">{i.qty ? naira(i.qty * i.price) : '—'}</td>
+                  <td>{idx === 0 ? <Badge tone={statusTone(r.status || '')}>{r.status}</Badge> : null}</td>
+                </tr>
+              )))}
+            </tbody>
           </table></div>
+          <div className="muted" style={{ padding: '12px 14px' }}>Each line records the drug, route of administration, frequency, course length in days and quantity.</div>
+        </Card>
+      )}
+
+      {tab === 'Procedures' && (
+        <Card title="Procedures & Services Performed">
+          <div className="tbl-wrap"><table className="tbl">
+            <thead><tr><th>Ref</th><th>Procedure / Service</th><th>Amount</th><th>Performed By</th><th>Date/Time</th><th>Payment</th></tr></thead>
+            <tbody>
+              {procedures.length === 0 && <tr><td colSpan={6} className="muted">No procedures or services recorded for this patient yet.</td></tr>}
+              {[...procedures].reverse().map((pr: Any) => (
+                <tr key={pr.id}>
+                  <td>{pr.id}</td>
+                  <td><b>{pr.name}</b>{pr.notes ? <div className="muted">{pr.notes}</div> : null}</td>
+                  <td className="money">{naira(pr.amount)}</td>
+                  <td>{pr.performedBy}<div className="muted">{pr.role}</div></td>
+                  <td>{pr.at}</td>
+                  <td><Badge tone={pr.paymentStatus === 'Paid' ? 'green' : 'amber'}>{pr.paymentStatus}</Badge></td>
+                </tr>
+              ))}
+            </tbody>
+          </table></div>
+          <div className="muted" style={{ padding: '12px 14px' }}>Each procedure is billed to the patient's wallet and appears in their billing history.</div>
         </Card>
       )}
 
       {tab === 'Pharmacy' && (
         <Card title="Dispensing Record">
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>RX</th><th>Drug</th><th>Qty</th><th>Status</th></tr></thead>
-            <tbody>{prescriptions.flatMap((r: Any) => (r.items || []).map((i: Any, idx: number) => (
-              <tr key={r.id + idx}><td>{r.id}</td><td>{i.drug}</td><td>{i.qty}</td><td><Badge tone={statusTone(r.status || '')}>{r.status}</Badge></td></tr>
-            )))}</tbody>
+            <thead><tr><th>RX</th><th>Drug</th><th>Route</th><th>Frequency</th><th>Duration</th><th>Qty</th><th>Status</th></tr></thead>
+            <tbody>
+              {prescriptions.flatMap((r: Any) => (r.items || []).map((i: Any, idx: number) => (
+                <tr key={r.id + idx}>
+                  <td>{r.id}</td><td>{i.drug}</td>
+                  <td>{i.route || '—'}</td><td>{i.frequency || '—'}</td>
+                  <td>{i.duration ? `${i.duration}d` : '—'}</td>
+                  <td>{i.qty}</td>
+                  <td><Badge tone={statusTone(r.status || '')}>{r.status}</Badge></td>
+                </tr>
+              )))}
+            </tbody>
           </table></div>
           <div className="muted" style={{ padding: '12px 14px' }}>Nurse administration records appear in the Activity timeline.</div>
         </Card>

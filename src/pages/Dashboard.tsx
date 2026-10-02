@@ -27,7 +27,7 @@ export default function Dashboard() {
 
 function RoleDashboard({ role, data }: { role: string; data: Any }) {
   const s = data.stats || {}
-  if (role === 'Records Officer') return <RecordsDash s={s} />
+  if (role === 'Records Officer') return <RecordsDash s={s} data={data} />
   if (role === 'Doctor') return <DoctorDash s={s} data={data} />
   if (role === 'Nurse') return <NurseDash s={s} data={data} />
   if (role === 'Laboratory Scientist') return <LabDash s={s} data={data} />
@@ -36,7 +36,7 @@ function RoleDashboard({ role, data }: { role: string; data: Any }) {
   return <RadDash s={s} data={data} />
 }
 
-function RecordsDash({ s }: { s: Any }) {
+function RecordsDash({ s, data }: { s: Any; data: Any }) {
   return (<>
       <div className="grid cols-4 mb">
         <StatCard icon="patients" value={s.total} label="Total Patients" />
@@ -47,20 +47,45 @@ function RecordsDash({ s }: { s: Any }) {
       <Card title="Quick actions">
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <Link to="/register" className="btn primary">+ Register New Patient</Link>
-          <span className="muted">Search a patient to start a new visit — never create a duplicate patient.</span>
+          <Link to="/patients?show=inactive" className="btn ghost">View Inactive Patients</Link>
+          <span className="muted">Search a patient to start a new visit — never create a duplicate patient. Only you can activate a patient; the activation fee is taken from their wallet automatically.</span>
         </div>
       </Card>
   </>)
 }
 
 function DoctorDash({ s, data }: { s: Any; data: Any }) {
+  const pending = (data.pendingConsultations || []) as Any[]
   return (<>
       <div className="grid cols-4 mb">
         <StatCard icon="patients" value={s.today} label="Today's Patients" />
         <StatCard icon="clock" value={s.waiting} label="Waiting Patients" tone="amber" />
-        <StatCard icon="doctor" value={s.consults} label="Active Consultations" tone="green" />
+        <StatCard icon="doctor" value={pending.length} label="Pending Consultation" tone={pending.length ? 'red' : 'green'} />
         <StatCard icon="clipboard" value={s.admitted} label="Admitted Patients" />
       </div>
+      <Card title="Procedures & Services" className="mb"
+        actions={<Link to="/services" className="btn primary sm">Open Procedures & Services</Link>}>
+        <div className="muted">
+          Record a procedure or service you performed — it is billed to the patient's wallet and written to their record.
+        </div>
+      </Card>
+      <Card title="Pending Consultation — vitals recorded by nursing" className="mb">
+        <div className="tbl-wrap"><table className="tbl">
+          <thead><tr><th>Patient</th><th>Visit</th><th>Vitals</th><th>Recorded</th><th></th></tr></thead>
+          <tbody>
+            {pending.length === 0 && <tr><td colSpan={5} className="muted">No patients waiting — every patient with vitals has been seen.</td></tr>}
+            {pending.map((v) => (
+              <tr key={v.id}>
+                <td><Link to={`/patients/${v.patientId}`}>{v.patientName}</Link><div className="muted">{v.patientId}</div></td>
+                <td>{v.id}</td>
+                <td>{v.vitals}</td>
+                <td className="muted">{v.vitalsAt}</td>
+                <td className="right"><Link className="btn primary sm" to={`/consultation?patient=${v.patientId}&visit=${v.id}`}>Consult</Link></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      </Card>
       <div className="grid cols-2">
         <Card title="Pending Investigations">
           <div className="tbl-wrap"><table className="tbl">
@@ -83,13 +108,40 @@ function DoctorDash({ s, data }: { s: Any; data: Any }) {
   </>)
 }
 function NurseDash({ s, data }: { s: Any; data: Any }) {
+  const fresh = (data.newPatients || []) as Any[]
   return (<>
       <div className="grid cols-4 mb">
+        <StatCard icon="register" value={fresh.length} label="New Patients" tone={fresh.length ? 'green' : undefined} />
         <StatCard icon="nurse" value={s.ward} label="Ward Patients" />
         <StatCard icon="clipboard" value={s.admitted} label="Admitted Patients" tone="blue" />
         <StatCard icon="bell" value={s.attention} label="Requiring Attention" tone="red" />
-        <StatCard icon="pill" value={s.medTasks} label="Medication Tasks" tone="amber" />
       </div>
+      <Card title="New Patients — activated by the Records Officer" className="mb">
+        <div className="tbl-wrap"><table className="tbl">
+          <thead><tr><th>Patient</th><th>Patient ID</th><th>Activated</th><th>By</th><th></th></tr></thead>
+          <tbody>
+            {fresh.length === 0 && <tr><td colSpan={5} className="muted">No new patients — everyone activated already has vitals recorded.</td></tr>}
+            {fresh.map((p) => (
+              <tr key={p.id}>
+                <td><Link to={`/patients/${p.id}`}>{p.patientName}</Link></td>
+                <td>{p.id}</td>
+                <td className="muted">{p.activatedAt}</td>
+                <td className="muted">{p.activatedBy}</td>
+                <td className="right"><Link className="btn primary sm" to={`/nursing?patient=${p.id}`}>Record Vitals</Link></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+        <div className="muted" style={{ padding: '12px 14px' }}>
+          Record vitals for these patients — the doctor sees them as a pending consultation straight away.
+        </div>
+      </Card>
+      <Card title="Procedures & Services" className="mb"
+        actions={<Link to="/services" className="btn primary sm">Open Procedures & Services</Link>}>
+        <div className="muted">
+          Record a procedure or service performed in the ward — it is billed to the patient's wallet and written to their record.
+        </div>
+      </Card>
       <Card title="Recent Vitals">
         <div className="tbl-wrap"><table className="tbl">
           <thead><tr><th>Patient</th><th>Temp</th><th>BP</th><th>Pulse</th><th>SpO2</th><th>Weight</th><th>Recorded By</th><th>Time</th></tr></thead>
@@ -100,7 +152,8 @@ function NurseDash({ s, data }: { s: Any; data: Any }) {
       </Card>
       <Card title="Ward Actions" className="mt">
         <Link to="/nursing" className="btn primary sm">Record Vitals / Ward Round</Link>{' '}
-        <Link to="/admissions" className="btn ghost sm">View Admissions</Link>
+        <Link to="/admissions" className="btn ghost sm">View Admissions</Link>{' '}
+        <Link to="/services" className="btn ghost sm">Procedures & Services</Link>
       </Card>
   </>)
 }

@@ -15,8 +15,11 @@ export const paths = {
   dashboard: '/api/dashboard',
   /** GET /api/settings — investigation types, drug categories, payment methods */
   settings: '/api/settings',
-  /** GET /api/patients — all patients */
+  /** GET /api/patients — all patients. The API hides Inactive patients from
+      every role except the Records Officer, the Accountant and administrators. */
   patients: '/api/patients',
+  /** GET /api/patients?status=Active|Inactive — force a status (records/accountant only for Inactive) */
+  patientsByStatus: (status: 'Active' | 'Inactive') => `/api/patients?status=${status}`,
   /** GET /api/patients/:id — patient + visits + vitals + investigations + … */
   patient: (id: string) => `/api/patients/${id}`,
   /** GET /api/admissions */
@@ -27,6 +30,10 @@ export const paths = {
   prescriptions: '/api/prescriptions',
   /** GET /api/drugs — pharmacy inventory */
   drugs: '/api/drugs',
+  /** GET /api/services — the priced procedure/service catalogue */
+  services: '/api/services',
+  /** GET /api/services/patient/:id — procedures performed on one patient */
+  patientServices: (id: string) => `/api/services/patient/${id}`,
   /** GET /api/payments */
   payments: '/api/payments',
   /** GET /api/wallettxs — wallet ledger */
@@ -50,6 +57,22 @@ export const patientApi = {
   startVisit: (patientId: string) => api.post(`/api/patients/${patientId}/visits`, {}),
   setStatus: (patientId: string, status: 'Active' | 'Inactive') =>
     api.post(`/api/patients/${patientId}/status`, { status }),
+  /** Records Officer only. The API deducts the configured activation fee from
+      the patient's wallet and returns the new balance. */
+  activate: (patientId: string) =>
+    api.post<{ activationFee: number; wallet: number; status: string }>(
+      `/api/patients/${patientId}/activate`, {}),
+}
+
+/* ---------- PROCEDURES / SERVICES ---------- */
+export interface RxDraftLine {
+  drugId: string; qty: number
+  route: string; frequency: string; duration: number
+}
+export const serviceApi = {
+  /** Record a procedure/service performed on a patient (bills their wallet). */
+  perform: (body: { patientId: string; serviceId: string; notes?: string; settle?: 'Wallet' | 'Cash' | 'Transfer' | 'POS' }) =>
+    api.post<{ walletBalance: number }>('/api/services/perform', body),
 }
 
 /* ---------- VISITS & CONSULTATION ---------- */
@@ -84,8 +107,13 @@ export const investigationApi = {
 
 /* ---------- PHARMACY ---------- */
 export const prescriptionApi = {
+  /** Dispensing always takes the cost from the wallet first; any shortfall is
+      raised as a pending payment for the accountant. */
   dispense: (prescriptionId: string, body: { method: string; items: { drugId: string; qty: number }[] }) =>
-    api.post<{ total: number; walletBalance: number }>(`/api/prescriptions/${prescriptionId}/dispense`, body),
+    api.post<{
+      total: number; debitedFromWallet: number; outstanding: number
+      walletBalance: number; shortages?: string[]
+    }>(`/api/prescriptions/${prescriptionId}/dispense`, body),
 }
 
 export const drugApi = {

@@ -1,16 +1,20 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
 import { Card, PageHead, Tabs, Badge, statusTone, Field } from '../components/ui'
 import { useFetch } from '../api'
 import { paths, activityApi, admissionApi, patientApi, vitalsApi } from '../endpoints'
-import type { Admission, Patient, Vital } from '../data'
+import type { Admission, Patient, Visit, Vital } from '../data'
 
 export default function Nursing() {
   const [tab, setTab] = useState('Vitals')
+  /* The nurses' dashboard links here with ?patient=KBC-… so a new patient can
+     have their vitals recorded straight away. */
+  const [q] = useSearchParams()
   const { data: patients = [] } = useFetch<Patient[]>(paths.patients)
   const { data: admissions = [], refetch: refetchAdm } = useFetch<Admission[]>(paths.admissions)
   const active = admissions.filter((a) => a.status === 'Admitted')
-  const [pid, setPid] = useState('')
+  const [pid, setPid] = useState(q.get('patient') || '')
   const [vid, setVid] = useState('')
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')

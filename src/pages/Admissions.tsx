@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Badge, statusTone, Modal, Field } from '../components/ui'
+import { Card, PageHead, Badge, statusTone, Modal, Field, naira } from '../components/ui'
 import { useFetch } from '../api'
 import { admissionApi, paths } from '../endpoints'
 import type { Admission } from '../data'
@@ -23,18 +23,30 @@ export default function Admissions() {
 
   return (
     <Layout title="Admissions">
-      <PageHead title="Admissions" sub="Patients admitted by doctors — ward, bed and responsible staff are tracked here." />
+      <PageHead title="Admissions" sub="Patients admitted by doctors — ward, bed, length of stay and the bed charge are all tracked here." />
       <Card title="Admitted Patients">
         <div className="tbl-wrap"><table className="tbl">
-          <thead><tr><th>Admission</th><th>Patient</th><th>Ward</th><th>Bed</th><th>Doctor</th><th>Admitted</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Admission</th><th>Patient</th><th>Ward</th><th>Bed</th><th>Doctor</th><th>Admitted</th><th>Days</th><th>Cost/Night</th><th>Total Cost</th><th>Reason</th><th>Status</th><th></th></tr></thead>
           <tbody>{list.map((a) => (
             <tr key={a.id}>
-              <td>{a.id}</td><td>{a.patientName}<div className="muted">{a.patientId}</div></td><td>{a.ward}</td><td>{a.bed}</td><td>{a.doctor}</td><td>{a.at}</td><td>{a.reason}</td>
+              <td>{a.id}</td><td>{a.patientName}<div className="muted">{a.patientId}</div></td><td>{a.ward}</td><td>{a.bed}</td><td>{a.doctor}</td><td>{a.at}</td>
+              <td>{a.days ?? 1}</td>
+              <td className="money">{naira(a.costPerNight || 0)}</td>
+              <td className="money">
+                {naira(a.totalCost || 0)}
+                {a.chargedToWallet ? <div><Badge tone="green">from wallet</Badge></div>
+                  : (a.totalCost || 0) > 0 ? <div><Badge tone="amber">outstanding</Badge></div> : null}
+              </td>
+              <td>{a.reason}</td>
               <td><Badge tone={statusTone(a.status)}>{a.status}</Badge></td>
               <td className="right">{a.status === 'Admitted' && <button className="btn primary sm" onClick={() => { setDis(a); setForm({ diagnosis: a.reason, summary: '', notes: '' }); setErr('') }}>Discharge</button>}</td>
             </tr>
           ))}</tbody>
         </table></div>
+        <div className="muted" style={{ padding: '12px 14px' }}>
+          Bed charge = days × cost per night. It is taken from the patient's wallet on admission; if the balance is short the
+          accountant is notified and the amount stays outstanding.
+        </div>
       </Card>
       {dis && (
         <Modal title={`Discharge — ${dis.patientName} (${dis.id})`} onClose={() => setDis(null)}
