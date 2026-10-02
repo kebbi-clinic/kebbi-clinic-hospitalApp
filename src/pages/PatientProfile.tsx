@@ -17,6 +17,10 @@ export default function PatientProfile() {
   const [tab, setTab] = useState('Overview')
   const [err, setErr] = useState('')
   const [note, setNote] = useState('')
+  /* Every hook must run before the early returns below, in the same order on
+     every render — otherwise React throws "Rendered more hooks than during the
+     previous render". */
+  const [busy, setBusy] = useState(false)
 
   if (loading || !b) return <Layout title="Patient Profile"><div className="muted">Loading…</div></Layout>
   if (error) return <Layout title="Patient Profile"><div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{error} — <Link to="/patients">← Back to patients</Link></div></Layout>
@@ -36,7 +40,6 @@ export default function PatientProfile() {
   const isRecords = role === 'Records Officer' || role.startsWith('Hospital') || role.startsWith('Super')
   /* Activation is a Records-Officer action; the server refuses anyone else. */
   const isRecordsOfficer = role === 'Records Officer'
-  const [busy, setBusy] = useState(false)
 
   const setStatus = async (status: 'Active' | 'Inactive') => {
     try { await patientApi.setStatus(p.id, status); setErr(''); refetch() }
