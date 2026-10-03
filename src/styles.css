@@ -142,6 +142,35 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .search-row .input { max-width: 380px; }
 
+/* ---------- Patient search (Patients tab + Patient Wallets tab) ---------- */
+.patient-search { position: relative; margin-bottom: 14px; }
+.ps-field { position: relative; flex: 1 1 320px; max-width: 380px; }
+.ps-field > svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.ps-field .input { padding-left: 34px; padding-right: 32px; }
+.ps-clear {
+  position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: 50%; border: none; cursor: pointer;
+  background: #eef2f7; color: var(--muted); font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.ps-clear:hover { background: var(--blue-100); color: var(--blue-700); }
+.ps-menu {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 55; margin-top: 6px;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(16,42,67,0.15); max-height: 340px; overflow-y: auto;
+}
+.ps-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px;
+  border: none; border-bottom: 1px solid var(--border); background: none;
+  font-family: inherit; font-size: 13.5px; text-align: left; cursor: pointer; color: var(--text);
+}
+.ps-item:last-child { border-bottom: none; }
+.ps-item:hover, .ps-item.active { background: var(--blue-100); }
+.ps-item .n { font-weight: 600; }
+.ps-item .i { color: var(--muted); font-size: 12px; }
+.ps-item .w { margin-left: auto; }
+.ps-more { padding: 10px 14px; font-size: 12px; border-top: 1px solid var(--border); }
+
 .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .page-head h2 { margin: 0; font-size: 19px; }
 .page-head .sub { color: var(--muted); font-size: 13px; width: 100%; }

@@ -5,6 +5,7 @@ import { Card, PageHead, Badge, statusTone, Modal, Tabs, naira } from '../compon
 import { useAuth } from '../auth'
 import { api, useFetch } from '../api'
 import { paths, patientApi } from '../endpoints'
+import { PatientSearch, filterPatients } from '../components/PatientSearch'
 import type { Patient, Settings, Visit } from '../data'
 
 /** Roles allowed to see (and activate) inactive patients. Mirrors the server,
@@ -32,7 +33,7 @@ export default function Patients() {
   const activationFee = Number(settings?.activationFee) || 0
 
   const shown = list.filter((p) => (tab === 'Inactive' ? p.status === 'Inactive' : true))
-  const filtered = shown.filter((p) => [p.id, p.firstName, p.surname, p.phone].join(' ').toLowerCase().includes(q.toLowerCase()))
+  const filtered = filterPatients(shown, q)
 
   const startVisit = async () => {
     if (!visitFor) return
@@ -68,10 +69,13 @@ export default function Patients() {
       </PageHead>
       {okMsg && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{okMsg}</div>}
       <Card title="Search patients" className="mb">
-        <div className="search-row">
-          <input className="input" placeholder="Search by Patient ID, Name or Phone…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <span className="muted">Patient IDs look like <b>KBC-000245</b></span>
-        </div>
+        <PatientSearch
+          patients={shown}
+          value={q}
+          onChange={setQ}
+          hint={<>Patient IDs look like <b>KBC-000245</b> — press <b>Enter</b> to open a record</>}
+          onPick={(p) => nav2(`/patients/${p.id}`)}
+        />
         {seesInactive && (
           <div style={{ marginTop: 12 }}>
             <Tabs tabs={['All', 'Inactive']} active={tab} onChange={setTab} />
@@ -100,7 +104,11 @@ export default function Patients() {
                 {canStartVisit && p.status === 'Active' && <button className="btn primary sm" onClick={() => setVisitFor(p)}>Start New Visit</button>}
               </td>
             </tr>
-          ))}</tbody>
+          ))}{filtered.length === 0 && (
+            <tr><td colSpan={7} className="muted" style={{ textAlign: 'center', padding: '22px 14px' }}>
+              {q.trim() ? <>No patient matches <b>{q}</b> in {tab === 'Inactive' ? 'the inactive list' : 'the list'}.</> : 'No patients here yet.'}
+            </td></tr>
+          )}</tbody>
         </table></div>
       </Card>
       {activateFor && (
