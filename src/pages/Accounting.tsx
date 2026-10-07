@@ -6,6 +6,19 @@ import { paths, walletApi } from '../endpoints'
 import { PatientSearch, SearchBox, filterPatients, matchesFields } from '../components/PatientSearch'
 import type { Patient, Payment, WalletTx } from '../data'
 
+/** Coerce any unknown payload into a real array so `.map`/`.filter` never crash
+ *  the error boundary. Handles bare arrays and common wrappers. */
+function asArray<T>(v: unknown): T[] {
+  if (Array.isArray(v)) return v as T[]
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>
+    for (const k of ['data', 'list', 'rows', 'items', 'results']) {
+      if (Array.isArray(o[k])) return o[k] as T[]
+    }
+  }
+  return []
+}
+
 export default function Accounting() {
   const [tab, setTab] = useState('Payments')
   const [fund, setFund] = useState<Patient | null>(null)
@@ -16,9 +29,14 @@ export default function Accounting() {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
-  const { data: payments = [] } = useFetch<Payment[]>(paths.payments)
-  const { data: txs = [] } = useFetch<WalletTx[]>(paths.walletTxs)
-  const { data: patients = [], refetch } = useFetch<Patient[]>(paths.patients)
+
+  const { data: paymentsRaw } = useFetch<unknown>(paths.payments)
+  const { data: txsRaw } = useFetch<unknown>(paths.walletTxs)
+  const { data: patientsRaw, refetch } = useFetch<unknown>(paths.patients)
+
+  const payments = useMemo(() => asArray<Payment>(paymentsRaw), [paymentsRaw])
+  const txs = useMemo(() => asArray<WalletTx>(txsRaw), [txsRaw])
+  const patients = useMemo(() => asArray<Patient>(patientsRaw), [patientsRaw])
 
   const paid = payments.filter((p) => p.status === 'Paid')
   const funding = paid.filter((p) => p.service === 'Wallet funding').reduce((s, p) => s + p.amount, 0)
@@ -183,4 +201,3 @@ export default function Accounting() {
     </Layout>
   )
 }
-
