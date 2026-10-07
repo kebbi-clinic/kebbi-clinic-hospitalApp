@@ -32,6 +32,9 @@ export const paths = {
   drugs: '/api/drugs',
   /** GET /api/services — the priced procedure/service catalogue */
   services: '/api/services',
+  /** GET /api/services/inventory — catalogue + how often each procedure has been
+      performed (procedure / amount / quantity) for the accountant's inventory. */
+  servicesInventory: '/api/services/inventory',
   /** GET /api/services/patient/:id — procedures performed on one patient */
   patientServices: (id: string) => `/api/services/patient/${id}`,
   /** GET /api/payments */
@@ -75,6 +78,33 @@ export const serviceApi = {
     api.post<{ walletBalance: number }>('/api/services/perform', body),
 }
 
+/* ---------- PROCEDURE INVENTORY (procedure / amount / quantity) ---------- */
+export interface InventoryRow {
+  id: string
+  procedure: string
+  name: string
+  category: string
+  department: string
+  active: boolean
+  /** Catalogue price (₦). */
+  amount: number
+  /** How many times the procedure has been performed. */
+  quantity: number
+  /** amount × quantity. */
+  total: number
+  /** What was actually billed (differs from `total` after price changes). */
+  billed: number
+}
+export interface Inventory {
+  items: InventoryRow[]
+  totals: { procedures: number; quantity: number; amount: number; total: number; billed: number }
+}
+export const inventoryApi = {
+  /** Read-only for every authenticated role: the accountant reads revenue from
+      it, doctors and nurses read it to see what they are allowed to record. */
+  list: () => api.get<Inventory>(paths.servicesInventory),
+}
+
 /* ---------- VISITS & CONSULTATION ---------- */
 export const visitApi = {
   consultation: (visitId: string, body: Record<string, unknown>) =>
@@ -100,9 +130,19 @@ export const admissionApi = {
 }
 
 /* ---------- LAB & RADIOLOGY ---------- */
+/** The money the laboratory moved when a result was submitted. `walletBalance`
+ *  is null when the patient had no wallet entry for this test. */
+export interface InvestigationResult {
+  price: number
+  debitedFromWallet: number
+  outstanding: number
+  walletBalance: number | null
+  status: string
+}
 export const investigationApi = {
+  /** Submitting a result charges the test's price to the patient's wallet. */
   saveResult: (investigationId: string, form: FormData) =>
-    api.post(`/api/investigations/${investigationId}/result`, form, true),
+    api.post<InvestigationResult>(`/api/investigations/${investigationId}/result`, form, true),
 }
 
 /* ---------- PHARMACY ---------- */

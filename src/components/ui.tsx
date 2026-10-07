@@ -58,7 +58,7 @@ export function Badge({ tone, children }: { tone: 'green' | 'blue' | 'red' | 'am
 export function statusTone(s: string): 'green' | 'blue' | 'red' | 'amber' | 'gray' {
   const map: Record<string, 'green' | 'blue' | 'red' | 'amber' | 'gray'> = {
     Active: 'green', Completed: 'green', Paid: 'green', Dispensed: 'green', Given: 'green',
-    Pending: 'amber', 'In Progress': 'blue', Waiting: 'amber', 'Low Stock': 'amber',
+    Pending: 'amber', 'In Progress': 'blue', Waiting: 'amber', 'Low Stock': 'amber', Open: 'amber',
     'Out of Stock': 'red', Inactive: 'gray', Admitted: 'blue', Discharged: 'gray', Cancelled: 'red',
   }
   return map[s] || 'gray'

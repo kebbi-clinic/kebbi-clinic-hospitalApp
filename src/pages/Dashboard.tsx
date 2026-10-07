@@ -198,6 +198,12 @@ function PharmDash({ s, data }: { s: Any; data: Any }) {
 }
 
 function AcctDash({ s, data }: { s: Any; data: Any }) {
+  const inventory = (data.procedureInventory || { items: [], totals: {} }) as {
+    items: Any[]
+    totals: { procedures?: number; quantity?: number; total?: number; billed?: number }
+  }
+  const rows = (inventory.items || []).slice(0, 8)
+  const t = inventory.totals || {}
   return (<>
       <div className="grid cols-4 mb">
         <StatCard icon="money" value={naira(s.revenue)} label="Revenue (all paid)" tone="green" />
@@ -205,6 +211,38 @@ function AcctDash({ s, data }: { s: Any; data: Any }) {
         <StatCard icon="check" value={s.completed} label="Completed Payments" />
         <StatCard icon="wallet" value={naira(s.funding)} label="Wallet Funding Today" tone="blue" />
       </div>
+
+      {/* Requirement: an Inventory button on the accountant's dashboard, showing
+          procedure / amount / quantity. The full list lives at /inventory/procedures. */}
+      <Card title="Inventory — Procedure / Amount / Quantity" className="mb"
+        actions={<Link to="/inventory/procedures" className="btn primary sm">Open Inventory</Link>}>
+        <div className="grid cols-3 mb">
+          <StatCard icon="clipboard" value={t.procedures ?? 0} label="Procedures" />
+          <StatCard icon="report" value={t.quantity ?? 0} label="Quantity Performed" tone="blue" />
+          <StatCard icon="money" value={naira(t.billed)} label="Billed to Wallets" tone="green" />
+        </div>
+        <div className="tbl-wrap"><table className="tbl">
+          <thead><tr><th>Procedure</th><th>Amount</th><th>Quantity</th><th>Total</th></tr></thead>
+          <tbody>
+            {rows.length === 0 && <tr><td colSpan={4} className="muted">No procedures recorded yet.</td></tr>}
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td><b>{r.procedure}</b><div className="muted">{r.department} · {r.category}</div></td>
+                <td className="money">{naira(r.amount)}</td>
+                <td className="money">{r.quantity}</td>
+                <td className="money">{naira(r.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+        <div className="muted" style={{ padding: '12px 14px' }}>
+          {(inventory.items || []).length > rows.length
+            ? `Showing ${rows.length} of ${inventory.items.length} procedures — `
+            : ''}
+          Open the full inventory for every procedure, its amount and quantity performed.
+        </div>
+      </Card>
+
       <Card title="Recent Wallet Transactions">
         <div className="tbl-wrap"><table className="tbl">
           <thead><tr><th>Patient</th><th>Type</th><th>Amount</th><th>Reason</th><th>Method</th><th>Balance After</th></tr></thead>

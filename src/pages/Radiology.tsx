@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Badge, statusTone, Modal } from '../components/ui'
+import { Card, PageHead, Badge, statusTone, Modal, naira } from '../components/ui'
 import { useFetch, useRealtime, fileUrl } from '../api'
 import { investigationApi, paths } from '../endpoints'
 import type { Investigation } from '../data'
@@ -10,6 +10,7 @@ export default function Radiology() {
   const [values, setValues] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [err, setErr] = useState('')
+  const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<Investigation | null>(null)
   const { data: list = [], refetch } = useFetch<Investigation[]>(paths.investigations('Radiology'))
@@ -24,7 +25,17 @@ export default function Radiology() {
       const fd = new FormData()
       fd.append('values', values)
       fd.append('image', file)
-      await investigationApi.saveResult(upload.id, fd)
+      /* Same rule as the laboratory: the test fee comes off the wallet on submit. */
+      const r = await investigationApi.saveResult(upload.id, fd)
+      const parts = [`${upload.test} submitted.`]
+      if (r.price > 0) {
+        parts.push(`${naira(r.debitedFromWallet)} taken from the patient's wallet (charge ${naira(r.price)}).`)
+        if (r.walletBalance != null) parts.push(`Balance ${naira(r.walletBalance)}.`)
+        if (r.outstanding > 0) parts.push(`${naira(r.outstanding)} outstanding — the accountant has been notified.`)
+      } else {
+        parts.push('No fee configured for this test, so nothing was charged.')
+      }
+      setOk(parts.join(' '))
       setUpload(null); setValues(''); setFile(null)
       refetch()
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
@@ -32,7 +43,9 @@ export default function Radiology() {
 
   return (
     <Layout title="Radiology">
-      <PageHead title="Radiology Requests" sub="Same workflow as laboratory: receive request → perform → upload report/image → linked to patient & visit." />
+      <PageHead title="Radiology Requests" sub="Same workflow as laboratory: receive request → perform → upload report/image → linked to patient & visit. The test fee is taken from the patient's wallet when you submit.">
+        {ok && <Badge tone="green">{ok}</Badge>}
+      </PageHead>
       <Card title="Requests">
         <div className="tbl-wrap"><table className="tbl">
           <thead><tr><th>ID</th><th>Patient</th><th>Investigation</th><th>Requested By</th><th>Date</th><th>Status</th><th></th></tr></thead>

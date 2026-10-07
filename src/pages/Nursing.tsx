@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Tabs, Badge, statusTone, Field } from '../components/ui'
+import { Card, PageHead, Tabs, Badge, statusTone, Field, naira } from '../components/ui'
 import { useFetch } from '../api'
-import { paths, activityApi, admissionApi, patientApi, vitalsApi } from '../endpoints'
-import type { Admission, Patient, Visit, Vital } from '../data'
+import { paths, activityApi, admissionApi, patientApi, vitalsApi, serviceApi } from '../endpoints'
+import type { Admission, Patient, Service, Visit, Vital } from '../data'
+
+/** Visit states a nurse can act on — see the note in the component below. */
+const OPEN_VISIT_STATUSES = ['Open', 'Waiting', 'Active']
 
 export default function Nursing() {
   const [tab, setTab] = useState('Vitals')
@@ -20,7 +23,11 @@ export default function Nursing() {
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
   const { data: bundle, refetch: refetchBundle } = useFetch<Record<string, any>>(pid ? paths.patient(pid) : '', [pid])
-  const visits = (bundle?.visits || []).filter((v: any) => v.status === 'Active' || v.status === 'Waiting') as any[]
+  /* Server-side visit states: "Open" straight after the Records Officer starts a
+     visit, "Waiting" once vitals are in. The old `Active | Waiting` filter hid a
+     brand-new visit, so no visit could be picked and vitals never saved — which
+     in turn meant the patient never reached the doctor's queue. */
+  const visits = (bundle?.visits || []).filter((v: any) => OPEN_VISIT_STATUSES.includes(v.status)) as any[]
 
   const call = async (fn: () => Promise<unknown>, okMsg: string) => {
     setBusy(true); setErr(''); setOk('')
@@ -29,12 +36,40 @@ export default function Nursing() {
 
   const [vit, setVit] = useState({ temp: '', bp: '', pulse: '', resp: '', spo2: '', weight: '' })
   const [wr, setWr] = useState({ obs: '', action: '' })
-  const [proc, setProc] = useState({ name: '', notes: '' })
+  const [proc, setProc] = useState({ serviceId: '', notes: '' })
   const [dis, setDis] = useState({ diagnosis: '', summary: '', notes: '' })
+
+  /* The priced catalogue. Procedures are picked from it rather than typed in,
+     so the amount is always the administrator's price and always lands on the
+     patient's wallet instead of vanishing into a free-text activity line. */
+  const { data: services = [], refetch: refetchServices } = useFetch<Service[]>(paths.services)
+  const chosenService = services.find((s) => s.id === proc.serviceId)
+  const patient = patients.find((p) => p.id === pid)
+  const walletShort = !!patient && !!chosenService && Number(patient.wallet) < Number(chosenService.amount)
+
+  /* Default to the first open visit so vitals/procedures are one click away. */
+  useEffect(() => {
+    if (!vid && visits.length) setVid(visits[0].id)
+  }, [pid, visits.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveVitals = () => call(() => vitalsApi.create({ patientId: pid, visitId: vid, ...vit }), 'Vitals saved to the patient history.')
   const saveWardRound = () => call(() => activityApi.create({ patientId: pid, what: `Ward round — ${wr.obs} (Action: ${wr.action})`, dept: 'Nursing' }), 'Ward round recorded.')
-  const saveProcedure = () => call(() => activityApi.create({ patientId: pid, what: `Procedure performed — ${proc.name} (${proc.notes})`, dept: 'Nursing', green: true }), 'Procedure recorded.')
+
+  /* Submit a procedure: bills the wallet straight away (settle: 'Wallet') and
+     writes the entry onto the patient's permanent record. The success message
+     uses the balance the API returns, never one computed here. */
+  const submitProcedure = async () => {
+    if (!pid || !proc.serviceId) { setErr('Choose the patient and the procedure performed.'); return }
+    if (!chosenService) { setErr('That procedure is no longer in the catalogue.'); return }
+    setBusy(true); setErr(''); setOk('')
+    try {
+      const r = await serviceApi.perform({ patientId: pid, serviceId: proc.serviceId, notes: proc.notes, settle: 'Wallet' })
+      setOk(`${chosenService.name} submitted — ${naira(chosenService.amount)} taken from the wallet. New balance ${naira(r.walletBalance)}.`)
+      setProc({ serviceId: '', notes: '' })
+      refetchBundle(); refetchServices()
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+
   const giveMed = (a: Admission, m: string) => call(() => activityApi.create({ patientId: a.patientId, what: `Medication administered — ${m}`, dept: 'Nursing', green: true }), 'Medication administration recorded.')
   const doDischarge = (a: Admission) => call(() => admissionApi.discharge(a.id, dis), 'Patient discharged.').then(refetchAdm)
 
@@ -51,8 +86,8 @@ export default function Nursing() {
           </select>
           {pid && (
             <select className="input" style={{ maxWidth: 300 }} value={vid} onChange={(e) => setVid(e.target.value)}>
-              <option value="">Select active visit…</option>
-              {visits.map((v) => <option key={v.id} value={v.id}>{v.id} — {v.createdAt}</option>)}
+              <option value="">{visits.length ? 'Select visit…' : 'No open visit'}</option>
+              {visits.map((v) => <option key={v.id} value={v.id}>{v.id} — {v.createdAt} ({v.status})</option>)}
             </select>
           )}
         </div>
@@ -106,10 +141,32 @@ export default function Nursing() {
       )}
 
       {tab === 'Procedures' && (
-        <Card title="Record Procedure">
-          <Field label="Procedure"><input className="input" placeholder="e.g. Wound dressing" value={proc.name} onChange={(e) => setProc({ ...proc, name: e.target.value })} /></Field>
-          <Field label="Description / Notes"><textarea className="input" rows={3} value={proc.notes} onChange={(e) => setProc({ ...proc, notes: e.target.value })} /></Field>
-          <button className="btn green" disabled={busy || !pid} onClick={saveProcedure}>Save Procedure</button>
+        <Card title="Submit Procedure"
+          actions={<span className="muted">Amounts come from the administrator's catalogue and are debited from the patient's wallet on submit</span>}>
+          {!pid && <div className="demo-note mb">Choose a patient above first — a procedure can only be billed to a patient on the books.</div>}
+          <div className="form-grid">
+            <Field label="Procedure / Service" full>
+              <select className="input" value={proc.serviceId} onChange={(e) => { setProc({ ...proc, serviceId: e.target.value }); setErr('') }}>
+                <option value="">Select procedure or service…</option>
+                {services.map((s) => <option key={s.id} value={s.id}>{s.name} — {naira(s.amount)}{s.department ? ` (${s.department})` : ''}</option>)}
+              </select>
+            </Field>
+            <Field label="Description / Notes" full>
+              <textarea className="input" rows={3} placeholder="Site, dressing used, findings…" value={proc.notes} onChange={(e) => setProc({ ...proc, notes: e.target.value })} />
+            </Field>
+          </div>
+          {chosenService && (
+            <div className="demo-note">
+              <b>{chosenService.name}</b> costs <b>{naira(chosenService.amount)}</b>{patient ? <> — {patient.firstName}'s wallet holds <b>{naira(patient.wallet)}</b></> : null}.
+              {walletShort && <span style={{ color: 'var(--red-600)' }}> The balance is short, so the accountant must fund the wallet before this can be submitted.</span>}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button className="btn green" disabled={busy || !pid || !proc.serviceId || walletShort} onClick={submitProcedure}>
+              {busy ? 'Submitting…' : 'Submit Procedure'}
+            </button>
+          </div>
+          {services.length === 0 && <div className="muted mt">No procedures configured yet — an administrator adds them (with their prices) in the admin console.</div>}
         </Card>
       )}
 

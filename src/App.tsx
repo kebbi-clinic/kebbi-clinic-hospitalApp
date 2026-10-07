@@ -14,6 +14,7 @@ import Accounting from './pages/Accounting'
 import Radiology from './pages/Radiology'
 import Admissions from './pages/Admissions'
 import Services from './pages/Services'
+import ProcedureInventory from './pages/ProcedureInventory'
 
 function Guard({ children }: { children: React.ReactElement }) {
   const { user } = useAuth()
@@ -41,6 +42,8 @@ export default function App() {
           <Route path="/radiology" element={<Guard><Radiology /></Guard>} />
           <Route path="/admissions" element={<Guard><Admissions /></Guard>} />
           <Route path="/services" element={<Guard><Services /></Guard>} />
+          {/* Procedure / amount / quantity inventory — Accountant, Doctors & Nurses. */}
+          <Route path="/inventory/procedures" element={<Guard><ProcedureInventory /></Guard>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

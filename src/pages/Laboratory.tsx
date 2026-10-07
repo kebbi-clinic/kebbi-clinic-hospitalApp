@@ -11,6 +11,7 @@ export default function Laboratory() {
   const [values, setValues] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [err, setErr] = useState('')
+  const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<Investigation | null>(null)
   const { user } = useAuth()
@@ -32,7 +33,18 @@ export default function Laboratory() {
       const fd = new FormData()
       fd.append('values', values)
       fd.append('image', file)
-      await investigationApi.saveResult(upload.id, fd)
+      const r = await investigationApi.saveResult(upload.id, fd)
+      /* The test fee is taken from the wallet the moment the result is
+         submitted — say exactly what moved rather than claiming success. */
+      const parts = [`${upload.test} submitted.`]
+      if (r.price > 0) {
+        parts.push(`${naira(r.debitedFromWallet)} taken from the patient's wallet (charge ${naira(r.price)}).`)
+        if (r.walletBalance != null) parts.push(`Balance ${naira(r.walletBalance)}.`)
+        if (r.outstanding > 0) parts.push(`${naira(r.outstanding)} outstanding — the accountant has been notified.`)
+      } else {
+        parts.push('No fee configured for this test, so nothing was charged.')
+      }
+      setOk(parts.join(' '))
       setUpload(null); setValues(''); setFile(null)
       refetch()
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
@@ -40,9 +52,11 @@ export default function Laboratory() {
 
   return (
     <Layout title="Laboratory">
-      <PageHead title="Laboratory Investigations" sub="Requests from doctors arrive here in real time. Upload result images linked to patient, visit and requesting doctor.">
+      <PageHead title="Laboratory Investigations" sub="Requests from doctors arrive here in real time. Upload result images linked to patient, visit and requesting doctor — the test fee is taken from the patient's wallet when you submit.">
         <span className="muted">Signed in as {user?.name || 'Staff'}</span>
       </PageHead>
+      {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok}</div>}
+      {err && <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
       <div className="grid cols-4 mb">
         <Card><div className="stat"><div className="ic amber"><Badge tone="amber">Pending</Badge></div><div><div className="v">{s.pending}</div><div className="l">Pending Requests</div></div></div></Card>
         <Card><div className="stat"><div className="ic blue"><Badge tone="blue">In Progress</Badge></div><div><div className="v">{s.progress}</div><div className="l">In Progress</div></div></div></Card>

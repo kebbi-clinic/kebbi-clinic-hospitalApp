@@ -13,6 +13,10 @@ const newRow = (): Row => ({ drugId: '', qty: 10, route: 'Oral', frequency: 'Dai
 
 const plural = (n: number) => (n === 1 ? '' : 's')
 
+/** Visit states that still need a doctor. The server writes "Open" on a new
+ *  visit and nursing upgrades it to "Waiting" once vitals are recorded. */
+const OPEN_VISIT_STATUSES = ['Open', 'Waiting', 'Active']
+
 export default function Consultation() {
   const nav = useNavigate()
   const [params] = useSearchParams()
@@ -24,7 +28,19 @@ export default function Consultation() {
   const [visitId, setVisitId] = useState(params.get('visit') || '')
   const { data: bundle } = useFetch<Record<string, any>>(patientId ? paths.patient(patientId) : '', [patientId])
   const patient = bundle?.patient || (bundle?.id ? bundle : undefined)
-  const openVisits: Visit[] = (bundle?.visits || []).filter((v: Visit) => v.status === 'Active' || v.status === 'Waiting')
+  /* A visit is selectable while it is still open. The API creates visits as
+     "Open" and nursing flips them to "Waiting" once vitals are in — filtering on
+     "Active" alone (as this screen used to) meant a freshly started visit was
+     invisible here, visitId never got set, and Save Consultation stayed greyed
+     out. Anything already consulted can still be re-opened from this list. */
+  const openVisits: Visit[] = (bundle?.visits || []).filter((v: Visit) =>
+    OPEN_VISIT_STATUSES.includes(v.status) || !!v.consultation)
+  /* The visit pre-picked by a dashboard link must stay selectable even if the
+     list above has not loaded (or the visit has since been completed). */
+  const linkedVisit: Visit | undefined = (bundle?.visits || []).find((v: Visit) => v.id === params.get('visit'))
+  const visitOptions: Visit[] = linkedVisit && !openVisits.some((v) => v.id === linkedVisit.id)
+    ? [linkedVisit, ...openVisits]
+    : openVisits
   const lastVitals = (bundle?.vitals || []).slice(-1)[0]
   const prevVisits: Visit[] = (bundle?.visits || []).filter((v: Visit) => v.consultation).slice(1, 4)
 
@@ -48,7 +64,7 @@ export default function Consultation() {
   }, [settings?.defaultNightlyRate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!visitId && openVisits.length) setVisitId(openVisits[0].id)
+    if (!visitId && visitOptions.length) setVisitId(visitOptions[0].id)
   }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const price = (id: string) => drugs.find((d) => d.id === id)?.price || 0
@@ -100,12 +116,12 @@ export default function Consultation() {
       {!patientId && <Card><div className="muted" style={{ padding: 16 }}>Select a patient above, or open one from the dashboard's "Consult" button.</div></Card>}
       {patient && (
         <>
-          {openVisits.length === 0 && <div className="demo-note mb">No active visit for this patient. Ask the Records Officer to start a new visit first.</div>}
-          {openVisits.length > 0 && (
+          {visitOptions.length === 0 && <div className="demo-note mb">No visit for this patient yet. Ask the Records Officer to start a new visit first.</div>}
+          {visitOptions.length > 0 && (
             <div className="field" style={{ maxWidth: 340 }}>
-              <label>Active visit</label>
+              <label>Visit</label>
               <select className="input" value={visitId} onChange={(e) => setVisitId(e.target.value)}>
-                {openVisits.map((v) => <option key={v.id} value={v.id}>{v.id} — {v.createdAt}</option>)}
+                {visitOptions.map((v) => <option key={v.id} value={v.id}>{v.id} — {v.createdAt} ({v.status})</option>)}
               </select>
             </div>
           )}
