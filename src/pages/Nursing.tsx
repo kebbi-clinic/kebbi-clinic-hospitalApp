@@ -4,7 +4,8 @@ import { Layout } from '../components/Layout'
 import { Card, PageHead, Tabs, Badge, statusTone, Field, naira } from '../components/ui'
 import { useFetch } from '../api'
 import { paths, activityApi, admissionApi, patientApi, vitalsApi, serviceApi } from '../endpoints'
-import type { Admission, Patient, Service, Visit, Vital } from '../data'
+import { PatientPicker } from '../components/PatientSearch'
+import type { Admission, Service, Visit, Vital } from '../data'
 
 /** Visit states a nurse can act on — see the note in the component below. */
 const OPEN_VISIT_STATUSES = ['Open', 'Waiting', 'Active']
@@ -14,7 +15,8 @@ export default function Nursing() {
   /* The nurses' dashboard links here with ?patient=KBC-… so a new patient can
      have their vitals recorded straight away. */
   const [q] = useSearchParams()
-  const { data: patients = [] } = useFetch<Patient[]>(paths.patients)
+  /* The full register is never downloaded — the picker searches the server and
+     hands back one record at a time (bundle), so 30k patients load in pages. */
   const { data: admissions = [], refetch: refetchAdm } = useFetch<Admission[]>(paths.admissions)
   const active = admissions.filter((a) => a.status === 'Admitted')
   const [pid, setPid] = useState(q.get('patient') || '')
@@ -44,8 +46,10 @@ export default function Nursing() {
      patient's wallet instead of vanishing into a free-text activity line. */
   const { data: services = [], refetch: refetchServices } = useFetch<Service[]>(paths.services)
   const chosenService = services.find((s) => s.id === proc.serviceId)
-  const patient = patients.find((p) => p.id === pid)
-  const walletShort = !!patient && !!chosenService && Number(patient.wallet) < Number(chosenService.amount)
+  /* Wallet details come from the picked patient's own bundle (not a downloaded
+     register), so the balance shown here is always this patient's. */
+  const picked = bundle?.patient || (bundle?.id ? bundle : undefined)
+  const walletShort = !!picked && !!chosenService && Number(picked.wallet) < Number(chosenService.amount)
 
   /* Default to the first open visit so vitals/procedures are one click away. */
   useEffect(() => {
@@ -80,10 +84,12 @@ export default function Nursing() {
       {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok}</div>}
       <Card title="Select patient" className="mb">
         <div className="search-row">
-          <select className="input" style={{ maxWidth: 340 }} value={pid} onChange={(e) => { setPid(e.target.value); setVid('') }}>
-            <option value="">Select patient…</option>
-            {patients.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.surname} — {p.id} ({p.status})</option>)}
-          </select>
+          <PatientPicker
+            value={pid}
+            initialId={q.get('patient') || undefined}
+            label="Patient"
+            onPick={(p) => { setPid(p?.id || ''); setVid('') }}
+          />
           {pid && (
             <select className="input" style={{ maxWidth: 300 }} value={vid} onChange={(e) => setVid(e.target.value)}>
               <option value="">{visits.length ? 'Select visit…' : 'No open visit'}</option>
@@ -157,7 +163,7 @@ export default function Nursing() {
           </div>
           {chosenService && (
             <div className="demo-note">
-              <b>{chosenService.name}</b> costs <b>{naira(chosenService.amount)}</b>{patient ? <> — {patient.firstName}'s wallet holds <b>{naira(patient.wallet)}</b></> : null}.
+              <b>{chosenService.name}</b> costs <b>{naira(chosenService.amount)}</b>{picked ? <> — {picked.firstName}'s wallet holds <b>{naira(picked.wallet)}</b></> : null}.
               {walletShort && <span style={{ color: 'var(--red-600)' }}> The balance is short, so the accountant must fund the wallet before this can be submitted.</span>}
             </div>
           )}

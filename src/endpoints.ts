@@ -6,6 +6,7 @@
  * Mirror of backend/src/routes — keep the two in sync.
  * ========================================================================== */
 import { api, type User } from './api'
+import type { Patient } from './data'
 
 /* ---------- READ PATHS (GET) ---------- */
 export const paths = {
@@ -57,6 +58,19 @@ export const authApi = {
 /* ---------- PATIENTS ---------- */
 export const patientApi = {
   register: (body: Record<string, unknown>) => api.post(paths.patients, body),
+  /** Server-side search: finds one patient out of tens of thousands without
+      downloading the whole register. Returns `{ items, total, page, limit }`. */
+  search: (q: string, opts?: { status?: 'Active' | 'Inactive'; page?: number; limit?: number }) => {
+    const params = new URLSearchParams()
+    if (q.trim()) params.set('q', q.trim())
+    if (opts?.status) params.set('status', opts.status)
+    if (opts?.page) params.set('page', String(opts.page))
+    if (opts?.limit) params.set('limit', String(opts.limit))
+    const qs = params.toString()
+    return api.get<{ items: Patient[]; total: number; page: number; limit: number }>(
+      `${paths.patients}${qs ? `?${qs}` : ''}`,
+    )
+  },
   startVisit: (patientId: string) => api.post(`/api/patients/${patientId}/visits`, {}),
   setStatus: (patientId: string, status: 'Active' | 'Inactive') =>
     api.post(`/api/patients/${patientId}/status`, { status }),

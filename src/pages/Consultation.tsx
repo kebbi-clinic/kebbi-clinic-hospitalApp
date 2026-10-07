@@ -4,7 +4,8 @@ import { Layout } from '../components/Layout'
 import { Card, PageHead, Field, Badge, naira } from '../components/ui'
 import { api, useFetch } from '../api'
 import { paths, patientApi, visitApi } from '../endpoints'
-import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Patient, type Settings, type Visit } from '../data'
+import { PatientPicker } from '../components/PatientSearch'
+import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Settings, type Visit } from '../data'
 
 /* One prescription line being drafted: drug, route, frequency, duration, qty. */
 interface Row { drugId: string; qty: number; route: string; frequency: string; duration: number }
@@ -20,7 +21,7 @@ const OPEN_VISIT_STATUSES = ['Open', 'Waiting', 'Active']
 export default function Consultation() {
   const nav = useNavigate()
   const [params] = useSearchParams()
-  const { data: patients = [] } = useFetch<Patient[]>(paths.patients)
+  /* No full patient list any more — the picker searches the server. */
   const { data: drugs = [] } = useFetch<Drug[]>(paths.drugs)
   const { data: settings } = useFetch<Settings>(paths.settings)
 
@@ -108,10 +109,11 @@ export default function Consultation() {
   return (
     <Layout title="Consultation">
       <PageHead title="New Consultation" sub="Prices come from pharmacy inventory — doctors cannot edit prices. Requests go straight to lab/radiology queues.">
-        <select className="input" style={{ maxWidth: 340 }} value={patientId} onChange={(e) => { setPatientId(e.target.value); setVisitId('') }}>
-          <option value="">Select patient…</option>
-          {patients.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.surname} — {p.id} ({p.status})</option>)}
-        </select>
+        <PatientPicker
+          value={patientId}
+          initialId={params.get('patient') || undefined}
+          onPick={(p) => { setPatientId(p?.id || ''); setVisitId('') }}
+        />
       </PageHead>
       {!patientId && <Card><div className="muted" style={{ padding: 16 }}>Select a patient above, or open one from the dashboard's "Consult" button.</div></Card>}
       {patient && (

@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
 import { Card, PageHead, Field, StatCard, naira } from '../components/ui'
 import { useFetch } from '../api'
-import { paths, serviceApi } from '../endpoints'
+import { paths, serviceApi, patientApi } from '../endpoints'
+import { PatientPicker } from '../components/PatientSearch'
 import type { Patient, Service } from '../data'
 
 /**
@@ -16,19 +17,33 @@ import type { Patient, Service } from '../data'
  */
 export default function Services() {
   const [params] = useSearchParams()
-  const { data: patients = [] } = useFetch<Patient[]>(paths.patients)
+  /* The service catalogue is small; the patient register is not, so patients
+     are picked through a server search while services stay a dropdown. */
   const { data: services = [] } = useFetch<Service[]>(paths.services)
 
   const [patientId, setPatientId] = useState(params.get('patient') || '')
+  const [picked, setPicked] = useState<Patient | null>(null)
   const [serviceId, setServiceId] = useState('')
   const [notes, setNotes] = useState('')
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const patient = patients.find((p) => p.id === patientId)
+  /* Wallet details come from the picker (or one lookup for dashboard links),
+     never from a downloaded register. */
+  const [linkedWallet, setLinkedWallet] = useState<number | null>(null)
+  const linkedId = params.get('patient') || ''
+  const [linkQ] = useState(linkedId)
+  const { data: linkedBundle } = useFetch<{ wallet?: number; firstName?: string }>(
+    linkQ ? paths.patient(linkQ) : '', [linkQ],
+  )
+  const patient = picked && picked.id === patientId ? picked : null
+  const patientWallet: number | null | undefined = patient
+    ? Number(patient.wallet)
+    : (patientId === linkedId ? (linkedBundle && typeof linkedBundle.wallet === 'number' ? linkedBundle.wallet : linkedWallet) : undefined)
+  const patientName = patient ? patient.firstName : (linkedBundle?.firstName || '')
   const chosen = services.find((s) => s.id === serviceId)
-  const affordable = !patient || !chosen || Number(patient.wallet) >= Number(chosen.amount)
+  const affordable = patientWallet == null || !chosen || patientWallet >= Number(chosen.amount)
   const catalogueValue = services.reduce((t, s) => t + Number(s.amount), 0)
 
   const record = async () => {
@@ -38,6 +53,10 @@ export default function Services() {
       const r = await serviceApi.perform({ patientId, serviceId, notes, settle: 'Wallet' })
       setOk(`Recorded. ₦${Number(chosen?.amount).toLocaleString()} taken from the wallet — new balance ₦${Number(r.walletBalance).toLocaleString()}.`)
       setServiceId(''); setNotes('')
+      /* The picker's wallet copy is stale now; the next render re-reads it from
+         the server response (ok message) and the fresh balance below. */
+      setLinkedWallet(Number(r.walletBalance))
+      if (picked && picked.id === patientId) setPicked({ ...picked, wallet: Number(r.walletBalance) })
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -50,16 +69,18 @@ export default function Services() {
       <div className="grid cols-3 mb">
         <StatCard icon="clipboard" value={services.length} label="Active Procedures / Services" />
         <StatCard icon="money" value={naira(catalogueValue)} label="Combined Catalogue Value" />
-        <StatCard icon="wallet" value={patient ? naira(patient.wallet) : '—'} label={patient ? `${patient.firstName}'s Wallet` : 'Select a patient'} tone="green" />
+        <StatCard icon="wallet" value={patientWallet == null ? '—' : naira(patientWallet)} label={patientName ? `${patientName}'s Wallet` : 'Select a patient'} tone="green" />
       </div>
 
       <Card title="Record a procedure or service" className="mb">
         <div className="form-grid">
           <Field label="Patient" full>
-            <select className="input" value={patientId} onChange={(e) => { setPatientId(e.target.value); setErr('') }}>
-              <option value="">Select patient…</option>
-              {patients.map((p) => <option key={p.id} value={p.id}>{p.firstName} {p.surname} — {p.id} (wallet {naira(p.wallet)})</option>)}
-            </select>
+            <PatientPicker
+              value={patientId}
+              initialId={params.get('patient') || undefined}
+              label="Patient"
+              onPick={(p) => { setPatientId(p?.id || ''); setPicked(p); setLinkedWallet(null) }}
+            />
           </Field>
           <Field label="Procedure / Service" full>
             <select className="input" value={serviceId} onChange={(e) => { setServiceId(e.target.value); setErr('') }}>
@@ -71,21 +92,23 @@ export default function Services() {
             <textarea className="input" rows={2} placeholder="Findings, site, dressing used…" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
         </div>
+
         {chosen && (
           <div className="demo-note">
             <b>{chosen.name}</b> costs <b>{naira(chosen.amount)}</b> and will be taken from the patient's wallet.
-            {!affordable && <span style={{ color: 'var(--red-600)' }}>
-              {' '}The wallet only holds {naira(Number(patient?.wallet))} — the accountant must fund it first.
-            </span>}
+            {patientWallet == null && <span style={{ color: 'var(--muted)' }}> The wallet balance is only shown once the patient is picked.</span>}
+            {patientWallet != null && !affordable && <span style={{ color: 'var(--red-600)' }}>{' '}The wallet only holds {naira(patientWallet)} — the accountant must fund it first.</span>}
           </div>
         )}
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button className="btn green" disabled={busy || !patientId || !serviceId} onClick={record}>
-            {busy ? 'Recording…' : 'Record & Bill to Wallet'}
-          </button>
-        </div>
-      </Card>
 
+        {chosen && (
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button className="btn green" disabled={busy || !patientId || !serviceId} onClick={record}>
+              {busy ? 'Recording…' : 'Record & Bill to Wallet'}
+            </button>
+          </div>
+        )}
+      </Card>
 
       <Card title="Catalogue">
         <div className="tbl-wrap"><table className="tbl">
