@@ -13,6 +13,20 @@ export function fileUrl(u?: string): string {
 export interface User { id: string; name: string; role: string; app: 'hospital' | 'admin'; mustChangePassword?: boolean }
 export interface ApiError extends Error { status?: number; details?: { field: string; message: string }[] }
 
+/* Fired on window when an API call comes back 401 (session expired, token
+ * cleared, account deactivated) — the app shell listens and bounces the user
+ * to the login screen. Auth calls are excluded so a wrong password on the
+ * Login form shows its error instead of triggering a logout loop. */
+export const UNAUTH_EVENT = 'kc:unauthorized'
+
+/** True when the request never got a reply — device offline, backend down,
+ *  DNS/CORS failure or timeout. Indistinguishable at this layer, and the user
+ *  message is the same either way: it's a network problem, not their input. */
+export function isNetworkError(error: unknown): boolean {
+  const e = error as AxiosError | undefined
+  return !!e?.isAxiosError && !e.response
+}
+
 let token: string | null = localStorage.getItem('kc_token')
 
 /* One shared axios instance for the whole app. */
@@ -27,15 +41,26 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-/* Normalise every failure into `ApiError { message, status, details }`. */
+/* Normalise every failure into `ApiError { message, status, details }`. Network
+ * failures get a plain-language message and always surface through the same
+ * shape, so screens render "no internet" instead of a raw axios dump. */
 http.interceptors.response.use(
   (res) => res,
   (error: AxiosError<{ error?: string; details?: { field: string; message: string }[] }>) => {
     const status = error.response?.status
     const data = error.response?.data
-    const err = new Error(data?.error || error.message || 'Request failed') as ApiError
+    let message = data?.error || error.message || 'Request failed'
+    if (isNetworkError(error)) {
+      message = 'No internet connection — check your network and try again.'
+    }
+    const err = new Error(message) as ApiError
     err.status = status
     err.details = data?.details
+    /* Session died mid-use. Every screen funnels through here, so this is the
+       one place that can reliably force the app back to the login screen. */
+    if (status === 401 && !String(error.config?.url || '').includes('/api/auth/')) {
+      window.dispatchEvent(new CustomEvent(UNAUTH_EVENT))
+    }
     return Promise.reject(err)
   },
 )
@@ -144,6 +169,21 @@ export function useRealtime(onEvent: (evt?: string, payload?: unknown) => void, 
     handlers.forEach(([e, h]) => s.on(e, h))
     return () => { handlers.forEach(([e, h]) => s.off(e, h)) }
   }, [key, role])
+}
+
+/** Tracks browser connectivity (`navigator.onLine` + online/offline events). A
+ *  request in flight when the network drops still fails through axios — this
+ *  drives the persistent banner, not the fetches themselves. */
+export function useOnline(): boolean {
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  return online
 }
 
 /** Hook helper: fetch once on mount with loading state. Empty URL = skip (avoids 404 spam). */
