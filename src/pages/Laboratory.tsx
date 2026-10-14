@@ -27,12 +27,12 @@ export default function Laboratory() {
   }
 
   const submit = async () => {
-    if (!upload || !file) { setErr('Please select a result image (PNG/JPG) or PDF.'); return }
+    if (!upload || (!file && !values.trim())) { setErr('Attach a result photo (PNG/JPG/PDF) OR type the result values — either one is enough.'); return }
     setBusy(true); setErr('')
     try {
       const fd = new FormData()
       fd.append('values', values)
-      fd.append('image', file)
+      if (file) fd.append('image', file)
       const r = await investigationApi.saveResult(upload.id, fd)
       /* The test fee is taken from the wallet the moment the result is
          submitted — say exactly what moved rather than claiming success. */
@@ -52,7 +52,7 @@ export default function Laboratory() {
 
   return (
     <Layout title="Laboratory">
-      <PageHead title="Laboratory Investigations" sub="Requests from doctors arrive here in real time. Upload result images linked to patient, visit and requesting doctor — the test fee is taken from the patient's wallet when you submit.">
+      <PageHead title="Laboratory Investigations" sub="Requests from doctors arrive here in real time — latest first. Upload a result photo OR type the values, linked to patient, visit and requesting doctor — the test fee is taken from the patient's wallet when you submit.">
         <span className="muted">Signed in as {user?.name || 'Staff'}</span>
       </PageHead>
       {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok}</div>}
@@ -82,7 +82,7 @@ export default function Laboratory() {
           footer={<><button className="btn ghost" onClick={() => setUpload(null)}>Cancel</button><button className="btn green" disabled={busy} onClick={submit}>{busy ? 'Uploading…' : 'Submit Result'}</button></>}>
           {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
           <label className="upload-box" style={{ display: 'block' }}>
-            {file ? <>Selected: <b>{file.name}</b><br /><span className="muted">Tap to change</span></> : <>📷 Select result image (camera / gallery)<br /><span className="muted">PNG / JPG — linked to patient, visit & investigation</span></>}
+            {file ? <>Selected: <b>{file.name}</b><br /><span className="muted">Tap to change</span></> : <>📷 Optional — attach a result photo / scan (camera, gallery or PDF)<br /><span className="muted">…or just type the values below — either one is enough</span></>}
             <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" style={{ display: 'none' }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </label>
           <div className="field mt"><label>Result values / notes</label><textarea className="input" rows={3} placeholder="e.g. PCV 32% · Hb 10.5 g/dL · WBC 7,800" value={values} onChange={(e) => setValues(e.target.value)} /></div>
@@ -96,18 +96,21 @@ export default function Laboratory() {
       )}
       {view?.result && (
         <Modal title={`Result — ${view.test} (${view.id})`} onClose={() => setView(null)}
-          footer={<><a className="btn primary" href={fileUrl(view.result.image)} target="_blank" rel="noreferrer">Open file</a><button className="btn ghost" onClick={() => setView(null)}>Close</button></>}>
+          footer={<>{view.result.image && <a className="btn primary" href={fileUrl(view.result.image)} target="_blank" rel="noreferrer">Open file</a>}<button className="btn ghost" onClick={() => setView(null)}>Close</button></>}>
           <div className="kv">
             <div className="k">Patient</div><div className="v">{view.patientId}</div>
             <div className="k">Requested by</div><div className="v">{view.doctor}</div>
             <div className="k">Reported by</div><div className="v">{view.result.by}</div>
             <div className="k">At</div><div className="v">{view.result.at}</div>
+            <div className="k">Charged</div><div className="v money">{naira(view.price || 0)}</div>
           </div>
           {view.result.values && (<><div className="muted mt mb" style={{ fontWeight: 700 }}>Result values</div><div style={{ whiteSpace: 'pre-wrap' }}>{view.result.values}</div></>)}
-          <div className="muted mt mb" style={{ fontWeight: 700 }}>Attached file</div>
-          {view.result.image.toLowerCase().endsWith('.pdf')
-            ? <iframe src={fileUrl(view.result.image)} title="result" style={{ width: '100%', height: 420, border: '1px solid var(--border)', borderRadius: 10 }} />
-            : <a href={fileUrl(view.result.image)} target="_blank" rel="noreferrer"><img src={fileUrl(view.result.image)} alt="result" style={{ maxWidth: '100%', borderRadius: 10 }} /></a>}
+          {view.result.image && (<>
+            <div className="muted mt mb" style={{ fontWeight: 700 }}>Attached file</div>
+            {view.result.image.toLowerCase().endsWith('.pdf')
+              ? <iframe src={fileUrl(view.result.image)} title="result" style={{ width: '100%', height: 420, border: '1px solid var(--border)', borderRadius: 10 }} />
+              : <a href={fileUrl(view.result.image)} target="_blank" rel="noreferrer"><img src={fileUrl(view.result.image)} alt="result" style={{ maxWidth: '100%', borderRadius: 10 }} /></a>}
+          </>)}
         </Modal>
       )}
     </Layout>

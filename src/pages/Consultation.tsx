@@ -5,7 +5,7 @@ import { Card, PageHead, Field, Badge, naira } from '../components/ui'
 import { api, useFetch } from '../api'
 import { paths, patientApi, visitApi } from '../endpoints'
 import { PatientPicker } from '../components/PatientSearch'
-import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Settings, type Visit } from '../data'
+import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Settings, type TestItem, type Visit } from '../data'
 
 /* One prescription line being drafted: drug, route, frequency, duration, qty. */
 interface Row { drugId: string; qty: number; route: string; frequency: string; duration: number }
@@ -24,6 +24,11 @@ export default function Consultation() {
   /* No full patient list any more — the picker searches the server. */
   const { data: drugs = [] } = useFetch<Drug[]>(paths.drugs)
   const { data: settings } = useFetch<Settings>(paths.settings)
+  /* The lab & radiology test catalogue — names with the admin's current prices.
+     Falls back to the legacy settings list when the catalogue is empty. */
+  const { data: catalogue = [] } = useFetch<TestItem[]>(paths.tests())
+  const labOptions: TestItem[] = catalogue.filter((t) => t.dept !== 'Radiology' && t.active !== false)
+  const radOptions: TestItem[] = catalogue.filter((t) => t.dept === 'Radiology' && t.active !== false)
 
   const [patientId, setPatientId] = useState(params.get('patient') || '')
   const [visitId, setVisitId] = useState(params.get('visit') || '')
@@ -137,19 +142,34 @@ export default function Consultation() {
               <Field label="Examination Findings"><textarea className="input" rows={3} value={form.exam} onChange={(e) => setForm({ ...form, exam: e.target.value })} /></Field>
               <Field label="Diagnosis"><input className="input" value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></Field>
             </Card>
-            <Card title="Investigations Requested">
+            <Card title="Investigations Requested" actions={<span className="muted">Prices come from the lab & radiology catalogue — billed from the wallet on result upload</span>}>
               <div className="muted mb" style={{ fontWeight: 700 }}>Laboratory</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {(settings?.investigationTypes || []).map((t) => (
-                  <button key={t} type="button" className={`btn sm ${tests.includes(t) ? 'green' : 'ghost'}`} onClick={() => toggle(tests, setTests, t)}>{t}</button>
+                {(labOptions.length
+                  ? labOptions.map((t) => t.name)
+                  : (settings?.investigationTypes || [])
+                ).map((t) => {
+                  const item = labOptions.find((x) => x.name === t)
+                  return (
+                    <button key={t} type="button" className={`btn sm ${tests.includes(t) ? 'green' : 'ghost'}`} onClick={() => toggle(tests, setTests, t)}>
+                      {t}{item ? <span className="muted"> · {naira(item.price)}</span> : ''}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="muted mt mb" style={{ fontWeight: 700 }}>Radiology</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {radOptions.map((t) => (
+                  <button key={t.id} type="button" className={`btn sm ${radTests.includes(t.name) ? 'green' : 'ghost'}`} onClick={() => toggle(radTests, setRadTests, t.name)}>
+                    {t.name}<span className="muted"> · {naira(t.price)}</span>
+                  </button>
                 ))}
               </div>
-              <div className="muted mt mb" style={{ fontWeight: 700 }}>Radiology (type + Enter to add)</div>
-              <input className="input" placeholder="e.g. Chest X-ray" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { toggle(radTests, setRadTests, v); (e.target as HTMLInputElement).value = '' } } }} />
+              <input className="input mt" placeholder="Other scan — type + Enter (e.g. Pelvic Ultrasound)" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { toggle(radTests, setRadTests, v); (e.target as HTMLInputElement).value = '' } } }} />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }} className="mt">
-                {radTests.map((t) => <Badge key={t} tone="blue">{t} <button className="x" onClick={() => toggle(radTests, setRadTests, t)}>×</button></Badge>)}
+                {radTests.filter((t) => !radOptions.some((o) => o.name === t)).map((t) => <Badge key={t} tone="blue">{t} <button className="x" onClick={() => toggle(radTests, setRadTests, t)}>×</button></Badge>)}
               </div>
-              <div className="muted mt">The laboratory / radiology dashboards receive these requests instantly.</div>
+              <div className="muted mt">The laboratory / radiology dashboards receive these requests instantly. The fee is taken from the patient's wallet when the result is uploaded.</div>
             </Card>
           </div>
           <Card title="Prescription" className="mt" actions={<span className="muted">Drug · Route · Frequency · Duration · Qty — prices from pharmacy inventory</span>}>

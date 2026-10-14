@@ -164,11 +164,11 @@ export default function Nursing() {
           {chosenService && (
             <div className="demo-note">
               <b>{chosenService.name}</b> costs <b>{naira(chosenService.amount)}</b>{picked ? <> — {picked.firstName}'s wallet holds <b>{naira(picked.wallet)}</b></> : null}.
-              {walletShort && <span style={{ color: 'var(--red-600)' }}> The balance is short, so the accountant must fund the wallet before this can be submitted.</span>}
+              {walletShort && <span style={{ color: 'var(--amber-600, #b45309)' }}> The balance is short, so the wallet is debited for what it holds and the remainder is raised as a pending payment for the accountant.</span>}
             </div>
           )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button className="btn green" disabled={busy || !pid || !proc.serviceId || walletShort} onClick={submitProcedure}>
+            <button className="btn green" disabled={busy || !pid || !proc.serviceId} onClick={submitProcedure}>
               {busy ? 'Submitting…' : 'Submit Procedure'}
             </button>
           </div>
@@ -189,7 +189,7 @@ export default function Nursing() {
               <div className="full"><button className="btn primary" disabled={busy || !dis.diagnosis} onClick={() => doDischarge(active[0])}>Complete Discharge (first listed patient)</button></div>
             </div>
           )}
-          <div className="muted mt">Records Officer then marks the patient INACTIVE — history is preserved.</div>
+          <div className="muted mt">On discharge the patient is automatically marked INACTIVE — their history is preserved and the Records Officer re-activates them (activation fee applies) on the next visit.</div>
         </Card>
       )}
 

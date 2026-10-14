@@ -5,7 +5,7 @@ import { Card, Badge, statusTone, Tabs, Timeline, naira } from '../components/ui
 import { useAuth } from '../auth'
 import { useFetch, fileUrl } from '../api'
 import { paths, patientApi } from '../endpoints'
-import type { Patient } from '../data'
+import { whenMs, type Patient } from '../data'
 
 const TABS = ['Overview', 'Visits', 'Medical History', 'Investigations', 'Prescriptions', 'Procedures', 'Pharmacy', 'Payments', 'Wallet', 'Activity']
 type Any = Record<string, any>
@@ -29,17 +29,104 @@ export default function PatientProfile() {
   const p: Patient = (b.patient || b) as Patient
   if (!p || !p.id) return <Layout title="Patient Profile"><div className="muted">Patient not found. <Link to="/patients">← Back to patients</Link></div></Layout>
   const visits: Any[] = b.visits || []
+  const vitals: Any[] = b.vitals || []
   const investigations: Any[] = b.investigations || []
   const prescriptions: Any[] = b.prescriptions || []
   const payments: Any[] = b.payments || []
   const walletTxs: Any[] = b.walletTxs || []
   const activity: Any[] = b.activity || []
+  const admissions: Any[] = b.admissions || []
   const procedures: Any[] = p.procedures || []
   const age = p.dob ? new Date().getFullYear() - Number(p.dob.slice(0, 4)) : '—'
   const role = user?.role || ''
   const isRecords = role === 'Records Officer' || role.startsWith('Hospital') || role.startsWith('Super')
   /* Activation is a Records-Officer action; the server refuses anyone else. */
   const isRecordsOfficer = role === 'Records Officer'
+
+  /* ── Medical history: EVERY nurse & doctor entry in one timeline ──────────
+     Consultations, vitals, ward rounds, medication administration, procedures,
+     investigations (requests AND results), prescriptions (written AND
+     dispensed) and admissions (admit AND discharge) — newest first. The old
+     tab only showed presenting complaint + diagnosis. */
+  const history = (() => {
+    const rows: { time: string; what: string; meta: string; green?: boolean }[] = []
+    visits.forEach((v: Any) => {
+      if (!v.consultation) return
+      const c = v.consultation
+      rows.push({
+        time: c.at || v.createdAt,
+        what: `Consultation — ${c.diagnosis || 'no diagnosis'}${c.complaint ? ` · complaint: ${c.complaint}` : ''}${c.exam ? ` · exam: ${c.exam}` : ''}`,
+        meta: `Doctor ${c.doctor} · ${v.id}`,
+        green: true,
+      })
+    })
+    vitals.forEach((vt: Any) => {
+      rows.push({
+        time: vt.at,
+        what: `Vitals — T ${vt.temp} · BP ${vt.bp} · P ${vt.pulse} · SpO₂ ${vt.spo2} · Resp ${vt.resp} · Wt ${vt.weight}`,
+        meta: `Nurse ${vt.staff}`,
+      })
+    })
+    /* Ward rounds & medication administration — the nurse entries written
+       straight to the activity feed (vitals are listed above from their own
+       records, so those are filtered out here to avoid doubles). */
+    activity.forEach((a: Any) => {
+      if (!String(a.meta || '').startsWith('Nurse')) return
+      if (String(a.what || '').startsWith('Vitals recorded')) return
+      rows.push({ time: a.time, what: a.what, meta: a.meta, green: a.green })
+    })
+    procedures.forEach((pr: Any) => {
+      rows.push({
+        time: pr.at,
+        what: `Procedure — ${pr.name} (${naira(pr.amount || 0)})${pr.notes ? ` · ${pr.notes}` : ''}`,
+        meta: `${pr.role} ${pr.performedBy}`,
+        green: true,
+      })
+    })
+    investigations.forEach((i: Any) => {
+      rows.push({
+        time: i.createdAt,
+        what: `${i.dept === 'Radiology' ? 'Radiology' : 'Laboratory'} test requested — ${i.test}${i.price ? ` (${naira(i.price)})` : ''}`,
+        meta: `Doctor ${i.doctor}`,
+      })
+      if (i.result?.at) {
+        rows.push({
+          time: i.result.at,
+          what: `Result uploaded — ${i.test}${i.result.values ? `: ${i.result.values}` : ''}`,
+          meta: `Laboratory ${i.result.by}`,
+          green: true,
+        })
+      }
+    })
+    prescriptions.forEach((r: Any) => {
+      rows.push({
+        time: r.createdAt,
+        what: `Prescribed — ${(r.items || []).map((it: Any) => `${it.drug} ×${it.qty}`).join(', ') || r.id}`,
+        meta: `Doctor ${r.doctor} · ${r.id}`,
+      })
+      if (r.status === 'Dispensed') {
+        rows.push({
+          time: r.dispensedAt || r.createdAt,
+          what: `Dispensed — ${(r.items || []).map((it: Any) => `${it.drug} ×${it.qty}`).join(', ')}`,
+          meta: `Pharmacy ${r.dispensedBy || ''}`,
+          green: true,
+        })
+      }
+    })
+    admissions.forEach((a: Any) => {
+      rows.push({ time: a.at, what: `Admitted — ${a.ward} ${a.bed} · ${a.reason}`, meta: `Doctor ${a.doctor}` })
+      if (a.discharge?.date) {
+        rows.push({
+          time: a.discharge.date,
+          what: `Discharged — ${a.discharge.diagnosis}${a.discharge.summary ? ` · ${a.discharge.summary}` : ''}`,
+          meta: `Staff ${a.discharge.staff}`,
+          green: true,
+        })
+      }
+    })
+    /* LATEST ON TOP — real timestamp order, not a string compare. */
+    return rows.sort((x, y) => whenMs(y.time) - whenMs(x.time))
+  })()
 
   const setStatus = async (status: 'Active' | 'Inactive') => {
     try { await patientApi.setStatus(p.id, status); setErr(''); refetch() }
@@ -111,26 +198,30 @@ export default function PatientProfile() {
       {tab === 'Visits' && (
         <Card title="Visits">
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>Visit</th><th>Date</th><th>Type</th><th>Diagnosis</th><th>Status</th></tr></thead>
+            <thead><tr><th>Visit</th><th>Date</th><th>Type</th><th>Diagnosis</th><th>Consultation notes</th><th>Status</th></tr></thead>
             <tbody>{visits.map((v: Any) => (
-              <tr key={v.id}><td>{v.id}</td><td>{v.date}</td><td>{v.type}</td><td>{v.diagnosis || '—'}</td><td><Badge tone={statusTone(v.status || '')}>{v.status}</Badge></td></tr>
+              <tr key={v.id}><td>{v.id}</td><td>{v.date}</td><td>{v.type}</td><td>{v.diagnosis || '—'}</td>
+                <td>{v.consultation ? (<>
+                  <div><b>Complaint:</b> {v.consultation.complaint || '—'}</div>
+                  <div><b>History:</b> {v.consultation.history || '—'}</div>
+                  <div><b>Exam:</b> {v.consultation.exam || '—'}</div>
+                  <div className="muted">Dr {v.consultation.doctor} · {v.consultation.at}</div>
+                </>) : '—'}</td>
+                <td><Badge tone={statusTone(v.status || '')}>{v.status}</Badge></td></tr>
             ))}</tbody>
           </table></div>
         </Card>
       )}
 
       {tab === 'Medical History' && (
-        <Card title="Consultation History">
-          {visits.filter((v: Any) => v.consultation).length === 0 && <div className="muted" style={{ padding: 14 }}>No consultations recorded yet.</div>}
-          {visits.filter((v: Any) => v.consultation).map((v: Any) => (
-            <div key={v.id} style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-              <b>{v.id}</b> · {v.date} <Badge tone="blue">{v.consultation.doctor}</Badge>
-              <div className="kv" style={{ marginTop: 8 }}>
-                <div className="k">Complaint</div><div className="v">{v.consultation.complaint}</div>
-                <div className="k">Diagnosis</div><div className="v">{v.consultation.diagnosis}</div>
-              </div>
-            </div>
-          ))}
+        <Card title="Medical History — every nurse & doctor entry, latest first"
+          actions={<span className="muted">{history.length} entries</span>}>
+          {history.length === 0
+            ? <div className="muted" style={{ padding: 14 }}>No clinical entries yet — vitals, consultations, investigations, prescriptions, procedures and admissions all appear here.</div>
+            : <Timeline items={history} />}
+          <div className="muted" style={{ padding: '12px 14px' }}>
+            Consultations · vitals · ward rounds · medication · procedures · laboratory &amp; radiology requests and results · prescriptions · admissions and discharges.
+          </div>
         </Card>
       )}
 

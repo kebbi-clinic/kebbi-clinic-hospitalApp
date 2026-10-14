@@ -90,8 +90,11 @@ export default function Patients() {
   const canActivate = role === 'Records Officer'
   const activationFee = Number(settings?.activationFee) || 0
 
+  /* Records Officer & Accountant see everything: "All" = the whole register,
+     plus dedicated Active and Inactive views. Clinical staff only ever get the
+     active list (the server filters Inactive out for them). */
   const shown = useMemo(
-    () => list.filter((p) => (tab === 'Inactive' ? p.status === 'Inactive' : true)),
+    () => list.filter((p) => (tab === 'Inactive' ? p.status === 'Inactive' : tab === 'Active' ? p.status === 'Active' : true)),
     [list, tab],
   )
   const filtered = useMemo(() => filterPatients(shown, q), [shown, q])
@@ -148,9 +151,9 @@ export default function Patients() {
         />
         {seesInactive && (
           <div style={{ marginTop: 12 }}>
-            <Tabs tabs={['All', 'Inactive']} active={tab} onChange={setTab} />
+            <Tabs tabs={['All', 'Active', 'Inactive']} active={tab} onChange={setTab} />
             <div className="muted" style={{ marginTop: 8 }}>
-              Inactive patients are visible to the Records Officer and the Accountant only — clinical staff work from the active list.
+              View <b>All</b> patients, or filter to <b>Active</b> / <b>Inactive</b> — inactive patients are visible to the Records Officer and the Accountant only. Clinical staff work from the active list.
             </div>
           </div>
         )}

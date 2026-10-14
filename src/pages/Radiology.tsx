@@ -19,12 +19,12 @@ export default function Radiology() {
   useRealtime(() => refetch(), ['data.changed', 'activity.new'])
 
   const submit = async () => {
-    if (!upload || !file) { setErr('Please select a report image (PNG/JPG) or PDF.'); return }
+    if (!upload || (!file && !values.trim())) { setErr('Attach a report photo (PNG/JPG/PDF) OR type the findings — either one is enough.'); return }
     setBusy(true); setErr('')
     try {
       const fd = new FormData()
       fd.append('values', values)
-      fd.append('image', file)
+      if (file) fd.append('image', file)
       /* Same rule as the laboratory: the test fee comes off the wallet on submit. */
       const r = await investigationApi.saveResult(upload.id, fd)
       const parts = [`${upload.test} submitted.`]
@@ -43,7 +43,7 @@ export default function Radiology() {
 
   return (
     <Layout title="Radiology">
-      <PageHead title="Radiology Requests" sub="Same workflow as laboratory: receive request → perform → upload report/image → linked to patient & visit. The test fee is taken from the patient's wallet when you submit.">
+      <PageHead title="Radiology Requests" sub="Same workflow as laboratory: receive request (latest first) → perform → upload report photo OR type the findings — linked to patient & visit. The test fee is taken from the patient's wallet when you submit.">
         {ok && <Badge tone="green">{ok}</Badge>}
       </PageHead>
       <Card title="Requests">
@@ -65,7 +65,7 @@ export default function Radiology() {
           footer={<><button className="btn ghost" onClick={() => setUpload(null)}>Cancel</button><button className="btn green" disabled={busy} onClick={submit}>{busy ? 'Uploading…' : 'Submit Report'}</button></>}>
           {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
           <label className="upload-box" style={{ display: 'block' }}>
-            {file ? <>Selected: <b>{file.name}</b></> : <>📷 Select report image / scan<br /><span className="muted">Attached to patient, visit & investigation</span></>}
+            {file ? <>Selected: <b>{file.name}</b></> : <>📷 Optional — attach a report photo / scan<br /><span className="muted">…or just type the findings below — either one is enough</span></>}
             <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" style={{ display: 'none' }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
           </label>
           <div className="field mt"><label>Radiologist report / findings</label><textarea className="input" rows={3} value={values} onChange={(e) => setValues(e.target.value)} /></div>
@@ -73,7 +73,7 @@ export default function Radiology() {
       )}
       {view?.result && (
         <Modal title={`Report — ${view.test} (${view.id})`} onClose={() => setView(null)}
-          footer={<><a className="btn primary" href={fileUrl(view.result.image)} target="_blank" rel="noreferrer">Open file</a><button className="btn ghost" onClick={() => setView(null)}>Close</button></>}>
+          footer={<>{view.result.image && <a className="btn primary" href={fileUrl(view.result.image)} target="_blank" rel="noreferrer">Open file</a>}<button className="btn ghost" onClick={() => setView(null)}>Close</button></>}>
           <div className="kv">
             <div className="k">Patient</div><div className="v">{view.patientId}</div>
             <div className="k">Requested by</div><div className="v">{view.doctor}</div>
@@ -81,10 +81,12 @@ export default function Radiology() {
             <div className="k">At</div><div className="v">{view.result.at}</div>
           </div>
           {view.result.values && (<><div className="muted mt mb" style={{ fontWeight: 700 }}>Findings</div><div style={{ whiteSpace: 'pre-wrap' }}>{view.result.values}</div></>)}
-          <div className="muted mt mb" style={{ fontWeight: 700 }}>Attached file</div>
-          {view.result.image.toLowerCase().endsWith('.pdf')
-            ? <iframe src={fileUrl(view.result.image)} title="report" style={{ width: '100%', height: 420, border: '1px solid var(--border)', borderRadius: 10 }} />
-            : <a href={fileUrl(view.result.image)} target="_blank" rel="noreferrer"><img src={fileUrl(view.result.image)} alt="report" style={{ maxWidth: '100%', borderRadius: 10 }} /></a>}
+          {view.result.image && (<>
+            <div className="muted mt mb" style={{ fontWeight: 700 }}>Attached file</div>
+            {view.result.image.toLowerCase().endsWith('.pdf')
+              ? <iframe src={fileUrl(view.result.image)} title="report" style={{ width: '100%', height: 420, border: '1px solid var(--border)', borderRadius: 10 }} />
+              : <a href={fileUrl(view.result.image)} target="_blank" rel="noreferrer"><img src={fileUrl(view.result.image)} alt="report" style={{ maxWidth: '100%', borderRadius: 10 }} /></a>}
+          </>)}
         </Modal>
       )}
     </Layout>

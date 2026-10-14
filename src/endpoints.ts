@@ -31,6 +31,9 @@ export const paths = {
   prescriptions: '/api/prescriptions',
   /** GET /api/drugs — pharmacy inventory */
   drugs: '/api/drugs',
+  /** GET /api/tests?dept=Lab|Radiology — laboratory & radiology test
+      inventory (names + admin-set prices). Omit dept for both departments. */
+  tests: (dept?: 'Lab' | 'Radiology') => dept ? `/api/tests?dept=${dept}` : '/api/tests',
   /** GET /api/services — the priced procedure/service catalogue */
   services: '/api/services',
   /** GET /api/services/inventory — catalogue + how often each procedure has been
@@ -87,9 +90,15 @@ export interface RxDraftLine {
   route: string; frequency: string; duration: number
 }
 export const serviceApi = {
-  /** Record a procedure/service performed on a patient (bills their wallet). */
-  perform: (body: { patientId: string; serviceId: string; notes?: string; settle?: 'Wallet' | 'Cash' | 'Transfer' | 'POS' }) =>
-    api.post<{ walletBalance: number }>('/api/services/perform', body),
+  /** Record a procedure/service performed on a patient (bills their wallet).
+   *  The server multiplies the catalogue unit price by `qty` (default 1 if omitted). */
+  perform: (body: {
+    patientId: string
+    serviceId: string
+    qty?: number
+    notes?: string
+    settle?: 'Wallet' | 'Cash' | 'Transfer' | 'POS'
+  }) => api.post<{ procedure: unknown; walletBalance: number }>('/api/services/perform', body),
 }
 
 /* ---------- PROCEDURE INVENTORY (procedure / amount / quantity) ---------- */
@@ -97,21 +106,16 @@ export interface InventoryRow {
   id: string
   procedure: string
   name: string
-  category: string
-  department: string
-  active: boolean
   /** Catalogue price (₦). */
   amount: number
   /** How many times the procedure has been performed. */
   quantity: number
   /** amount × quantity. */
   total: number
-  /** What was actually billed (differs from `total` after price changes). */
-  billed: number
 }
 export interface Inventory {
   items: InventoryRow[]
-  totals: { procedures: number; quantity: number; amount: number; total: number; billed: number }
+  totals: { procedures: number; quantity: number; amount: number; total: number }
 }
 export const inventoryApi = {
   /** Read-only for every authenticated role: the accountant reads revenue from
@@ -173,6 +177,12 @@ export const prescriptionApi = {
 export const drugApi = {
   create: (body: Record<string, unknown>) => api.post(paths.drugs, body),
   update: (drugId: string, body: Record<string, unknown>) => api.put(`/api/drugs/${drugId}`, body),
+}
+
+/* ---------- LAB & RADIOLOGY INVENTORY (test catalogue + prices) ---------- */
+export const testApi = {
+  create: (body: Record<string, unknown>) => api.post(paths.tests(), body),
+  update: (testId: string, body: Record<string, unknown>) => api.put(`/api/tests/${testId}`, body),
 }
 
 /* ---------- FINANCE ---------- */

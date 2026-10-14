@@ -17,8 +17,6 @@ const NAV: Record<Role, { section: string; items: NavItem[] }[]> = {
       { to: '/consultation', label: 'Consultation', icon: 'doctor' },
       { to: '/services', label: 'Procedures & Services', icon: 'clipboard' },
       { to: '/inventory/procedures', label: 'Inventory', icon: 'report' },
-      { to: '/lab', label: 'Laboratory', icon: 'lab' },
-      { to: '/radiology', label: 'Radiology', icon: 'radiology' },
       { to: '/nursing', label: 'Ward & Nursing', icon: 'nurse' },
     ]},
   ],
@@ -45,6 +43,7 @@ const NAV: Record<Role, { section: string; items: NavItem[] }[]> = {
       { to: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
       { to: '/patients', label: 'Patients', icon: 'patients' },
       { to: '/lab', label: 'Investigations', icon: 'lab' },
+      { to: '/inventory/tests', label: 'Inventory & Prices', icon: 'clipboard' },
     ]},
   ],
   'Pharmacist': [
@@ -68,6 +67,7 @@ const NAV: Record<Role, { section: string; items: NavItem[] }[]> = {
       { to: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
       { to: '/patients', label: 'Patients', icon: 'patients' },
       { to: '/radiology', label: 'Radiology Requests', icon: 'radiology' },
+      { to: '/inventory/tests', label: 'Inventory & Prices', icon: 'clipboard' },
     ]},
   ],
 }
