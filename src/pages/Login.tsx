@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import type { User } from '../api'
 
 export default function Login() {
   const nav = useNavigate()
+  const [params] = useSearchParams()
+  /* Bounced here from an expired session? Say so — otherwise "logged out for
+     no reason" looks like a bug. The flag is one-shot (replace on next login). */
+  const expired = params.get('expired') === '1'
   const { login, changePassword } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -68,6 +72,7 @@ export default function Login() {
         </>) : (<>
         <h1>Welcome Back</h1>
         <div className="sub">Sign in to the Kebbi Clinic Hospital Staff App</div>
+        {expired && <div className="demo-note" style={{ background: 'var(--amber-100)', color: 'var(--amber-600)' }}>Your session expired — please sign in again.</div>}
         <form onSubmit={submit}>
           <div className="field">
             <label>Username / Phone</label>

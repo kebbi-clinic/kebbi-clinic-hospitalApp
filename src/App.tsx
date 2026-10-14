@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
+import { NotFound, OfflineScreen, SystemChrome } from './components/System'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Patients from './pages/Patients'
@@ -27,28 +28,34 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Guard><Dashboard /></Guard>} />
-          <Route path="/patients" element={<Guard><Patients /></Guard>} />
-          <Route path="/register" element={<Guard><RegisterPatient /></Guard>} />
-          <Route path="/patients/:id" element={<Guard><PatientProfile /></Guard>} />
-          <Route path="/consultation" element={<Guard><Consultation /></Guard>} />
-          <Route path="/nursing" element={<Guard><Nursing /></Guard>} />
-          <Route path="/lab" element={<Guard><Laboratory /></Guard>} />
-          <Route path="/pharmacy" element={<Guard><Pharmacy /></Guard>} />
-          <Route path="/inventory" element={<Guard><Inventory /></Guard>} />
-          <Route path="/accounting" element={<Guard><Accounting /></Guard>} />
-          <Route path="/radiology" element={<Guard><Radiology /></Guard>} />
-          <Route path="/admissions" element={<Guard><Admissions /></Guard>} />
-          <Route path="/services" element={<Guard><Services /></Guard>} />
-          {/* Procedure / amount / quantity inventory — Accountant, Doctors & Nurses. */}
-          <Route path="/inventory/procedures" element={<Guard><ProcedureInventory /></Guard>} />
-          {/* Laboratory & radiology test inventory + prices — lab scientists,
-              radiologists and administrators. */}
-          <Route path="/inventory/tests" element={<Guard><TestInventory /></Guard>} />
-        </Routes>
+        <SystemChrome>
+          {/* Full-screen "no internet" takeover — renders above every route. */}
+          <OfflineScreen />
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Guard><Dashboard /></Guard>} />
+            <Route path="/patients" element={<Guard><Patients /></Guard>} />
+            <Route path="/register" element={<Guard><RegisterPatient /></Guard>} />
+            <Route path="/patients/:id" element={<Guard><PatientProfile /></Guard>} />
+            <Route path="/consultation" element={<Guard><Consultation /></Guard>} />
+            <Route path="/nursing" element={<Guard><Nursing /></Guard>} />
+            <Route path="/lab" element={<Guard><Laboratory /></Guard>} />
+            <Route path="/pharmacy" element={<Guard><Pharmacy /></Guard>} />
+            <Route path="/inventory" element={<Guard><Inventory /></Guard>} />
+            <Route path="/accounting" element={<Guard><Accounting /></Guard>} />
+            <Route path="/radiology" element={<Guard><Radiology /></Guard>} />
+            <Route path="/admissions" element={<Guard><Admissions /></Guard>} />
+            <Route path="/services" element={<Guard><Services /></Guard>} />
+            {/* Procedure / amount / quantity inventory — Accountant, Doctors & Nurses. */}
+            <Route path="/inventory/procedures" element={<Guard><ProcedureInventory /></Guard>} />
+            {/* Laboratory & radiology test inventory + prices — lab scientists,
+                radiologists and administrators. */}
+            <Route path="/inventory/tests" element={<Guard><TestInventory /></Guard>} />
+            {/* Unknown URL — the 404 page, never a blank screen. */}
+            <Route path="*" element={<NotFound home="/dashboard" />} />
+          </Routes>
+        </SystemChrome>
       </BrowserRouter>
     </AuthProvider>
   )

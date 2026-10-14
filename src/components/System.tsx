@@ -46,10 +46,29 @@ export function OfflineBanner() {
       <Icon name="warn" size={18} />
       <div>
         <b>No internet connection</b>
-        <div className="t">Check your network — actions will fail until you are back online.</div>
+        <div className="t">Check your network — this screen can&apos;t reach the server right now.</div>
       </div>
-      <button className="btn ghost sm" style={{ color: '#fff', borderColor: 'rgba(255,255,255,.5)' }} onClick={() => window.location.reload()}>Retry</button>
+      <button className="btn ghost sm offline-retry" onClick={() => window.location.reload()}>Retry</button>
       <button className="x" aria-label="Dismiss" onClick={() => setDismissed(true)}>×</button>
+    </div>
+  )
+}
+
+/* Full-screen takeover shown when the browser is offline from app start (or
+ * loses its connection while idle): no half-rendered pages, just a clear
+ * "no internet" state with a retry action. */
+export function OfflineScreen() {
+  const online = useOnline()
+  if (online) return null
+  return (
+    <div className="offline-screen" role="alert">
+      <div className="offline-card">
+        <div className="offline-ic"><Icon name="warn" size={40} /></div>
+        <h1>No internet connection</h1>
+        <div className="sub">Check your network connection and try again. Nothing was lost — your session is still here.</div>
+        <button className="btn primary" onClick={() => window.location.reload()}>Retry connection</button>
+        <Link to="/login" className="btn ghost">Go to Login</Link>
+      </div>
     </div>
   )
 }
