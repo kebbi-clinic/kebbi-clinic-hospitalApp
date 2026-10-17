@@ -260,7 +260,11 @@ export function PatientPicker({
             value={picked && value ? `${picked.firstName} ${picked.surname} — ${picked.id}` : q}
             aria-label={`Search ${label.toLowerCase()}s`}
             onChange={(e) => { setQ(e.target.value); setPicked(null); onPick(null); setOpen(true) }}
-            onFocus={() => setOpen(true)}
+            /* Refocusing a field that already has a picked patient must not
+               re-open the results panel: the full-width .ps-menu would float
+               over the form below (e.g. the Procedure / Service dropdown) and
+               swallow the taps meant for it. Typing re-opens the list. */
+            onFocus={() => { if (!picked) setOpen(true) }}
             onKeyDown={onKeyDown}
           />
           {(picked || q) && (

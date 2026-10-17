@@ -44,7 +44,7 @@ export default function Nursing() {
   /* The priced catalogue. Procedures are picked from it rather than typed in,
      so the amount is always the administrator's price and always lands on the
      patient's wallet instead of vanishing into a free-text activity line. */
-  const { data: services = [], refetch: refetchServices } = useFetch<Service[]>(paths.services)
+  const { data: services = [], error: servicesErr, loading: servicesLoading, refetch: refetchServices } = useFetch<Service[]>(paths.services)
   const chosenService = services.find((s) => s.id === proc.serviceId)
   /* Wallet details come from the picked patient's own bundle (not a downloaded
      register), so the balance shown here is always this patient's. */
@@ -150,10 +150,16 @@ export default function Nursing() {
         <Card title="Submit Procedure"
           actions={<span className="muted">Amounts come from the administrator's catalogue and are debited from the patient's wallet on submit</span>}>
           {!pid && <div className="demo-note mb">Choose a patient above first — a procedure can only be billed to a patient on the books.</div>}
+          {servicesErr && (
+            <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
+              The procedures catalogue could not be loaded ({servicesErr}) — the dropdown will stay empty.{' '}
+              <button className="btn ghost sm" onClick={() => refetchServices()}>Retry</button>
+            </div>
+          )}
           <div className="form-grid">
             <Field label="Procedure / Service" full>
               <select className="input" value={proc.serviceId} onChange={(e) => { setProc({ ...proc, serviceId: e.target.value }); setErr('') }}>
-                <option value="">Select procedure or service…</option>
+                <option value="">{servicesLoading && services.length === 0 ? 'Loading catalogue…' : 'Select procedure or service…'}</option>
                 {services.map((s) => <option key={s.id} value={s.id}>{s.name} — {naira(s.amount)}{s.department ? ` (${s.department})` : ''}</option>)}
               </select>
             </Field>

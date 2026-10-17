@@ -70,14 +70,21 @@ export default function Patients() {
   }, [])
 
   const [settings, setSettings] = useState<Settings | null>(null)
+  /* A settings load can fail (cold backend, network blip). Tracking that
+     separately from "loaded with a zero fee" is what stops the modal from
+     confidently announcing ₦0 while activation really charges the fee. */
+  const [settingsOk, setSettingsOk] = useState(false)
   const loadSettings = useCallback(async () => {
     try {
       const raw = await api.get(paths.settings)
       setSettings(raw as Settings)
+      setSettingsOk(true)
     } catch (e) {
-      // Settings failing shouldn't break the page — activation fee just defaults to 0.
+      // Settings failing shouldn't break the page — but activation fee display
+      // and confirmation are gated until a fresh copy arrives (see the modal).
       console.warn('[Patients] settings load failed →', e)
       setSettings(null)
+      setSettingsOk(false)
     }
   }, [])
 
@@ -88,7 +95,10 @@ export default function Patients() {
   const canStartVisit = role === 'Records Officer' || role === 'Doctor'
   const seesInactive = SEES_INACTIVE.includes(role)
   const canActivate = role === 'Records Officer'
-  const activationFee = Number(settings?.activationFee) || 0
+  /* The fee is only "known" once settings loaded successfully — an unknown
+     fee is never displayed as ₦0 (the modal says so explicitly). */
+  const feeKnown = settingsOk && settings != null
+  const activationFee = feeKnown ? Number(settings!.activationFee) || 0 : null
 
   /* Records Officer & Accountant see everything: "All" = the whole register,
      plus dedicated Active and Inactive views. Clinical staff only ever get the
@@ -113,6 +123,9 @@ export default function Patients() {
 
   const activate = async () => {
     if (!activateFor) return
+    /* Never charge against a fee we could not verify — the notice must match
+       what the server will deduct. */
+    if (!feeKnown) { setErr('Could not verify the current activation fee — reload it below and try again.'); return }
     setBusy(true); setErr(''); setOkMsg('')
     const who = `${activateFor.firstName} ${activateFor.surname}`
     try {
@@ -123,7 +136,8 @@ export default function Patients() {
       setOkMsg(`${who} activated.`
         + (r.activationFee > 0
           ? ` Activation fee ₦${Number(r.activationFee).toLocaleString()} taken from the wallet — new balance ₦${Number(r.wallet).toLocaleString()}.`
-          : ' (no activation fee configured)'))
+          : ' (no activation fee configured)')
+        + (r.visitId ? ` Visit ${r.visitId} is open for the nurse to record vitals.` : ''))
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -184,7 +198,8 @@ export default function Patients() {
                   {canActivate && p.status === 'Inactive' && (
                     <button
                       className="btn green sm"
-                      onClick={() => { setActivateFor(p); setErr(''); setOkMsg('') }}
+                      onClick={() => { setActivateFor(p); setErr(''); setOkMsg(''); loadSettings() }}
+                      title="Reloads the current activation fee first, so the notice matches what will be deducted"
                     >
                       Activate
                     </button>
@@ -213,7 +228,7 @@ export default function Patients() {
           footer={
             <>
               <button className="btn ghost" onClick={() => setActivateFor(null)}>Cancel</button>
-              <button className="btn green" disabled={busy} onClick={activate}>
+              <button className="btn green" disabled={busy || !feeKnown} onClick={activate}>
                 {busy ? 'Activating…' : 'Activate Patient'}
               </button>
             </>
@@ -221,15 +236,22 @@ export default function Patients() {
         >
           {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
           <p>Only the Records Officer can activate a patient. Once activated they appear in the nurses' <b>new patients</b> queue for vitals.</p>
+          {!feeKnown && (
+            <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
+              The current activation fee could not be loaded from the server — activation is paused
+              so you never announce ₦0 while the wallet is really charged.{' '}
+              <button className="btn ghost sm" onClick={loadSettings}>Reload the fee</button>
+            </div>
+          )}
           <div className="kv">
             <div className="k">Patient</div><div className="v">{activateFor.id}</div>
             <div className="k">Current status</div><div className="v"><Badge tone="gray">Inactive</Badge></div>
             <div className="k">Wallet balance</div><div className="v money">{naira(activateFor.wallet)}</div>
-            <div className="k">Activation fee</div><div className="v money">{naira(activationFee)}</div>
+            <div className="k">Activation fee</div><div className="v money">{feeKnown ? naira(activationFee) : 'Unknown — not loaded'}</div>
             <div className="k">Balance after activation</div>
-            <div className="v money">{naira(Math.max(0, Number(activateFor.wallet) - activationFee))}</div>
+            <div className="v money">{feeKnown ? naira(Math.max(0, Number(activateFor.wallet) - (activationFee ?? 0))) : '—'}</div>
           </div>
-          {activationFee > Number(activateFor.wallet) && (
+          {feeKnown && (activationFee ?? 0) > Number(activateFor.wallet) && (
             <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
               The wallet does not cover the activation fee. The accountant must fund it before activation can go ahead.
             </div>

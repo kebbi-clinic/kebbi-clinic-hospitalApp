@@ -19,6 +19,25 @@ export interface ApiError extends Error { status?: number; details?: { field: st
  * Login form shows its error instead of triggering a logout loop. */
 export const UNAUTH_EVENT = 'kc:unauthorized'
 
+/* Decode a JWT payload without verifying the signature (we only need the `exp`
+   field to detect expiry client-side, before wasting a request on a dead token). */
+export function parseJwt<T = any>(token: string): T | null {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return null
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as T
+  } catch { return null }
+}
+
+/* True when the token's `exp` has passed. Tokens without `exp` are treated as
+   valid — better to let the server 401 than to break apps that issue non-expiry
+   tokens in future. */
+export function isTokenExpired(token: string): boolean {
+  const payload = parseJwt<{ exp?: number }>(token)
+  if (!payload || !payload.exp) return false
+  return Date.now() >= payload.exp * 1000
+}
+
 /** True when the request never got a reply — device offline, backend down,
  *  DNS/CORS failure or timeout. Indistinguishable at this layer, and the user
  *  message is the same either way: it's a network problem, not their input. */
@@ -35,9 +54,17 @@ export const http: AxiosInstance = axios.create({
   timeout: 20_000,
 })
 
-/* Attach the JWT to every request automatically. */
+/* Attach the JWT to every request automatically. If the token has already
+   expired (client-side check), drop it and fire UNAUTH_EVENT so the shell
+   bounces the user to login instead of sending a doomed request. */
 http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  if (!token) return config
+  if (isTokenExpired(token)) {
+    setToken(null)
+    window.dispatchEvent(new CustomEvent(UNAUTH_EVENT))
+    return config
+  }
+  config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
@@ -82,7 +109,9 @@ export const api = {
   put: <T = never>(url: string, body?: unknown) => http.put<T>(url, body).then((r) => r.data),
   del: <T = never>(url: string) => http.delete<T>(url).then((r) => r.data),
   setToken,
+  getToken: () => token,
   hasToken: () => !!token,
+  isTokenExpired,
   BASE,
 }
 
@@ -186,7 +215,26 @@ export function useOnline(): boolean {
   return online
 }
 
-/** Hook helper: fetch once on mount with loading state. Empty URL = skip (avoids 404 spam). */
+/* Keep every tab's auth state in sync: if another tab logs out (clears
+   `kc_token`) or logs in (sets a new token), this tab follows immediately so
+   nobody is left holding an expired token after long use. Runs once at module
+   load; no-op in non-browser environments. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== 'kc_token') return
+    if (!e.newValue) {
+      setToken(null)
+      window.dispatchEvent(new CustomEvent(UNAUTH_EVENT))
+    } else if (e.newValue !== token) {
+      token = e.newValue
+    }
+  })
+}
+
+/** Hook helper: fetch once on mount with loading state. Empty URL = skip (avoids 404 spam).
+ *  Transient failures (serverless cold-start 503s, network blips) are retried a
+ *  couple of times before the screen is left to show an error — so dropdowns
+ *  like the procedures catalogue no longer come up empty "sometimes". */
 export function useFetch<T>(url: string, deps: unknown[] = []) {
   const [data, setData] = useState<T | undefined>(undefined)
   const [error, setError] = useState('')
@@ -194,11 +242,29 @@ export function useFetch<T>(url: string, deps: unknown[] = []) {
   useEffect(() => {
     if (!url || url.endsWith('/undefined') || url.endsWith('/api/patients/')) { setLoading(false); return () => {} }
     let live = true
-    setLoading(true)
-    api.get<T>(url)
-      .then((d) => { if (live) { setData(d); setError('') } })
-      .catch((e) => { if (live) setError(e.message) })
-      .finally(() => { if (live) setLoading(false) })
+    let attempts = 0
+    const MAX_ATTEMPTS = 3
+    const run = () => {
+      if (!live) return
+      setLoading(true)
+      api.get<T>(url)
+        .then((d) => { if (live) { setData(d); setError(''); setLoading(false) } })
+        .catch((e) => {
+          if (!live) return
+          attempts++
+          const status = (e as any)?.status
+          /* 4xx is the server answering definitively — only network failures
+             and 5xx (cold starts, upstream hiccups) are worth another round-trip. */
+          const isTransient = status === undefined || status >= 500
+          if (attempts < MAX_ATTEMPTS && isTransient) {
+            setTimeout(run, 1000)
+          } else {
+            setError((e as Error).message)
+            setLoading(false)
+          }
+        })
+    }
+    run()
     return () => { live = false }
   }, deps)
   return { data, error, loading, refetch: () => api.get<T>(url).then((d) => setData(d)) }

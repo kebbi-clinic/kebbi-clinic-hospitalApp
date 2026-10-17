@@ -1,17 +1,36 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Layout } from '../components/Layout'
 import { StatCard, Card, Badge, statusTone, naira } from '../components/ui'
 import { useAuth } from '../auth'
-import { useFetch } from '../api'
+import { useFetch, useRealtime } from '../api'
 import { paths } from '../endpoints'
 
 type Any = Record<string, any>
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { data, loading, error } = useFetch<Any>(paths.dashboard)
+  const { data, loading, error, refetch } = useFetch<Any>(paths.dashboard)
   const role = user?.role || ''
   const name = user?.name || 'Staff'
+  const refetchRef = useRef(refetch)
+  refetchRef.current = refetch
+  /* Live-ish queues without a live socket. The deployed API cannot host
+     WebSockets (Vercel), so the socket events below only fire locally — the
+     30s poll + focus refresh is what makes an activated patient appear on a
+     nurse's already-open dashboard instead of waiting for a manual reload. */
+  useRealtime(() => { refetchRef.current() }, ['data.changed', 'activity.new', 'notification'], role)
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') refetchRef.current() }
+    const t = window.setInterval(tick, 30_000)
+    window.addEventListener('focus', tick)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      window.clearInterval(t)
+      window.removeEventListener('focus', tick)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [])
   return (
     <Layout title="Dashboard">
       <div className="page-head">

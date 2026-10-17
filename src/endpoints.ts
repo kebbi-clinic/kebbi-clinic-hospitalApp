@@ -78,9 +78,10 @@ export const patientApi = {
   setStatus: (patientId: string, status: 'Active' | 'Inactive') =>
     api.post(`/api/patients/${patientId}/status`, { status }),
   /** Records Officer only. The API deducts the configured activation fee from
-      the patient's wallet and returns the new balance. */
+      the patient's wallet, opens the episode's visit when none is open, and
+      returns the new balance. */
   activate: (patientId: string) =>
-    api.post<{ activationFee: number; wallet: number; status: string }>(
+    api.post<{ activationFee: number; wallet: number; status: string; visitId?: string | null }>(
       `/api/patients/${patientId}/activate`, {}),
 }
 

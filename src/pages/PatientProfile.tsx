@@ -142,7 +142,8 @@ export default function PatientProfile() {
       refetch()
       setNote(r.activationFee > 0
         ? `Patient activated. Activation fee ₦${Number(r.activationFee).toLocaleString()} taken from the wallet — new balance ₦${Number(r.wallet).toLocaleString()}.`
-        : 'Patient activated.')
+        : 'Patient activated.'
+        + (r.visitId ? ` Visit ${r.visitId} is open for the nurse to record vitals.` : ''))
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 

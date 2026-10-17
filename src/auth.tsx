@@ -22,9 +22,16 @@ function isValidUser(u: unknown): u is User {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Token is restored by api.ts; the user record rides along in localStorage.
-  // A half-written or stale `kc_user` must never take the app down — treat it as logged out.
+  // A half-written or stale `kc_user` must never take the app down — treat it
+  // as logged out. An expired token is also treated as logged out so the user
+  // is bounced to login immediately instead of hitting 401 on every request.
   const [user, setUser] = useState<User | null>(() => {
     if (!api.hasToken()) return null
+    if (api.isTokenExpired(api.getToken()!)) {
+      localStorage.removeItem('kc_token')
+      localStorage.removeItem('kc_user')
+      return null
+    }
     const u = storedUser()
     if (!isValidUser(u)) { localStorage.removeItem('kc_user'); return null }
     return u

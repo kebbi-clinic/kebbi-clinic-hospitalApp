@@ -17,7 +17,7 @@ import type { Patient, Service } from '../data'
  */
 export default function Services() {
   const [params] = useSearchParams()
-  const { data: servicesRaw } = useFetch<unknown>(paths.services)
+  const { data: servicesRaw, error: servicesErr, refetch: refetchServices } = useFetch<unknown>(paths.services)
   const services: Service[] = Array.isArray(servicesRaw)
     ? (servicesRaw as Service[])
     : Array.isArray((servicesRaw as any)?.data) ? ((servicesRaw as any).data as Service[])
@@ -84,6 +84,12 @@ export default function Services() {
       <PageHead title="Procedures & Services" sub="Record a procedure or service performed on a patient. The unit price comes from the catalogue; the total is unit price × quantity and is billed to the patient's wallet." />
       {err && <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
       {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok}</div>}
+      {servicesErr && (
+        <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
+          The procedures catalogue could not be loaded ({servicesErr}) — the dropdown will stay empty.{' '}
+          <button className="btn ghost sm" onClick={() => refetchServices()}>Retry</button>
+        </div>
+      )}
 
       <div className="grid cols-3 mb">
         <StatCard icon="clipboard" value={services.length} label="Active Procedures / Services" />
