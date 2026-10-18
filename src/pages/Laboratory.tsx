@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Badge, statusTone, Modal, naira } from '../components/ui'
+import { Card, PageHead, Badge, statusTone, Modal, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { useAuth } from '../auth'
 import { api, useFetch, useRealtime, fileUrl } from '../api'
 import { investigationApi, paths } from '../endpoints'
@@ -14,6 +15,9 @@ export default function Laboratory() {
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<Investigation | null>(null)
+  /* Receipt for the last charged result — review before printing. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
   const { user } = useAuth()
   const { data: all = [], refetch } = useFetch<Investigation[]>(paths.investigations('Lab'))
 
@@ -34,13 +38,14 @@ export default function Laboratory() {
       fd.append('values', values)
       if (file) fd.append('image', file)
       const r = await investigationApi.saveResult(upload.id, fd)
-      /* The test fee is taken from the wallet the moment the result is
-         submitted — say exactly what moved rather than claiming success. */
+      /* The test fee comes off the wallet in full when the result is submitted
+         — the API refuses with a bold "top up" error when it cannot. */
       const parts = [`${upload.test} submitted.`]
       if (r.price > 0) {
         parts.push(`${naira(r.debitedFromWallet)} taken from the patient's wallet (charge ${naira(r.price)}).`)
         if (r.walletBalance != null) parts.push(`Balance ${naira(r.walletBalance)}.`)
-        if (r.outstanding > 0) parts.push(`${naira(r.outstanding)} outstanding — the accountant has been notified.`)
+        /* Every transaction has a receipt: open it for review before printing. */
+        if (r.walletTx) { const rc = receiptFromTx(r.walletTx); setReceipt(rc); setLastReceipt(rc) }
       } else {
         parts.push('No fee configured for this test, so nothing was charged.')
       }
@@ -55,8 +60,17 @@ export default function Laboratory() {
       <PageHead title="Laboratory Investigations" sub="Requests from doctors arrive here in real time — latest first. Upload a result photo OR type the values, linked to patient, visit and requesting doctor — the test fee is taken from the patient's wallet when you submit.">
         <span className="muted">Signed in as {user?.name || 'Staff'}</span>
       </PageHead>
-      {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok}</div>}
-      {err && <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
+      {ok && (
+        <AlertCard tone="green" title="Result submitted"
+          actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+          {ok}
+        </AlertCard>
+      )}
+      {err && (
+        <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Could not submit the result'}>
+          {err}
+        </AlertCard>
+      )}
       <div className="grid cols-4 mb">
         <Card><div className="stat"><div className="ic amber"><Badge tone="amber">Pending</Badge></div><div><div className="v">{s.pending}</div><div className="l">Pending Requests</div></div></div></Card>
         <Card><div className="stat"><div className="ic blue"><Badge tone="blue">In Progress</Badge></div><div><div className="v">{s.progress}</div><div className="l">In Progress</div></div></div></Card>
@@ -80,7 +94,11 @@ export default function Laboratory() {
       {upload && (
         <Modal title={`Upload Result — ${upload.test} (${upload.id})`} onClose={() => setUpload(null)}
           footer={<><button className="btn ghost" onClick={() => setUpload(null)}>Cancel</button><button className="btn green" disabled={busy} onClick={submit}>{busy ? 'Uploading…' : 'Submit Result'}</button></>}>
-          {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
+          {err && (
+            <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Could not submit the result'}>
+              {err}
+            </AlertCard>
+          )}
           <label className="upload-box" style={{ display: 'block' }}>
             {file ? <>Selected: <b>{file.name}</b><br /><span className="muted">Tap to change</span></> : <>📷 Optional — attach a result photo / scan (camera, gallery or PDF)<br /><span className="muted">…or just type the values below — either one is enough</span></>}
             <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" style={{ display: 'none' }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
@@ -113,6 +131,7 @@ export default function Laboratory() {
           </>)}
         </Modal>
       )}
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }

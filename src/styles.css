@@ -314,3 +314,23 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .notfound-card h1 { margin: 8px 0; font-size: 20px; }
 .notfound-card .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
 .notfound-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+/* ---------- Bold alert card (wallet / transaction messages) ---------- */
+.alert-card {
+  display: flex; align-items: flex-start; gap: 12px;
+  border: 2px solid; border-radius: 12px;
+  padding: 14px 16px; margin-bottom: 16px;
+  background: #fff;
+}
+.alert-card.red { border-color: var(--red-600); background: var(--red-100); color: var(--red-600); }
+.alert-card.green { border-color: var(--green-600); background: var(--green-100); color: var(--green-600); }
+.alert-card.amber { border-color: var(--amber-600, #b45309); background: var(--amber-100); color: var(--amber-600, #b45309); }
+.alert-card.blue { border-color: var(--blue-700); background: var(--blue-100); color: var(--blue-900); }
+.alert-body { flex: 1; min-width: 0; }
+.alert-title { font-size: 13.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.alert-msg { font-size: 13.5px; font-weight: 700; line-height: 1.45; }
+.alert-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+/* ---------- Receipt preview (inside the receipt modal) ---------- */
+.receipt-preview { background: #f1f5f9; border-radius: 10px; padding: 14px 8px; }
+.receipt-hint { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: center; }

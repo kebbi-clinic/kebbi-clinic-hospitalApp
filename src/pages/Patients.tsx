@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Badge, statusTone, Modal, Tabs, naira } from '../components/ui'
+import { Card, PageHead, Badge, statusTone, Modal, Tabs, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { useAuth } from '../auth'
 import { api } from '../api'
 import { paths, patientApi } from '../endpoints'
@@ -35,6 +36,9 @@ export default function Patients() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [okMsg, setOkMsg] = useState('')
+  /* Receipt for the last activation charge — review before printing. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
   const [nav] = useSearchParams()
   const [tab, setTab] = useState(nav.get('show') === 'inactive' ? 'Inactive' : 'All')
   const nav2 = useNavigate()
@@ -138,6 +142,8 @@ export default function Patients() {
           ? ` Activation fee ₦${Number(r.activationFee).toLocaleString()} taken from the wallet — new balance ₦${Number(r.wallet).toLocaleString()}.`
           : ' (no activation fee configured)')
         + (r.visitId ? ` Visit ${r.visitId} is open for the nurse to record vitals.` : ''))
+      /* The activation charge always has a receipt — open it before printing. */
+      if (r.walletTx) { const rc = receiptFromTx(r.walletTx, activateFor); setReceipt(rc); setLastReceipt(rc) }
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -147,7 +153,12 @@ export default function Patients() {
         {role === 'Records Officer' && <Link to="/register" className="btn primary">+ Register New Patient</Link>}
       </PageHead>
 
-      {okMsg && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{okMsg}</div>}
+      {okMsg && (
+        <AlertCard tone="green" title="Patient activated"
+          actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+          {okMsg}
+        </AlertCard>
+      )}
       {loadErr && (
         <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
           Could not load patients: {loadErr}{' '}
@@ -234,7 +245,11 @@ export default function Patients() {
             </>
           }
         >
-          {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
+          {err && (
+            <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Activation failed'}>
+              {err}
+            </AlertCard>
+          )}
           <p>Only the Records Officer can activate a patient. Once activated they appear in the nurses' <b>new patients</b> queue for vitals.</p>
           {!feeKnown && (
             <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
@@ -252,9 +267,9 @@ export default function Patients() {
             <div className="v money">{feeKnown ? naira(Math.max(0, Number(activateFor.wallet) - (activationFee ?? 0))) : '—'}</div>
           </div>
           {feeKnown && (activationFee ?? 0) > Number(activateFor.wallet) && (
-            <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
+            <AlertCard tone="red" title="Top up the patient’s wallet">
               The wallet does not cover the activation fee. The accountant must fund it before activation can go ahead.
-            </div>
+            </AlertCard>
           )}
         </Modal>
       )}
@@ -283,6 +298,8 @@ export default function Patients() {
           </div>
         </Modal>
       )}
+
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }

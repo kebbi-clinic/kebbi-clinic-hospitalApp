@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Tabs, Badge, statusTone, Field, naira } from '../components/ui'
+import { Card, PageHead, Tabs, Badge, statusTone, Field, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { useFetch } from '../api'
 import { paths, activityApi, admissionApi, patientApi, vitalsApi, serviceApi } from '../endpoints'
 import { PatientPicker } from '../components/PatientSearch'
@@ -24,6 +25,9 @@ export default function Nursing() {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
+  /* Receipt for the last submitted procedure — review before printing. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
   const { data: bundle, refetch: refetchBundle } = useFetch<Record<string, any>>(pid ? paths.patient(pid) : '', [pid])
   /* Server-side visit states: "Open" straight after the Records Officer starts a
      visit, "Waiting" once vitals are in. The old `Active | Waiting` filter hid a
@@ -60,8 +64,10 @@ export default function Nursing() {
   const saveWardRound = () => call(() => activityApi.create({ patientId: pid, what: `Ward round — ${wr.obs} (Action: ${wr.action})`, dept: 'Nursing' }), 'Ward round recorded.')
 
   /* Submit a procedure: bills the wallet straight away (settle: 'Wallet') and
-     writes the entry onto the patient's permanent record. The success message
-     uses the balance the API returns, never one computed here. */
+     writes the entry onto the patient's permanent record. The wallet must
+     cover the amount in full — a short wallet is refused by the API with the
+     bold "top up the patient's wallet" card below. The success message uses
+     the balance the API returns, never one computed here. */
   const submitProcedure = async () => {
     if (!pid || !proc.serviceId) { setErr('Choose the patient and the procedure performed.'); return }
     if (!chosenService) { setErr('That procedure is no longer in the catalogue.'); return }
@@ -69,6 +75,8 @@ export default function Nursing() {
     try {
       const r = await serviceApi.perform({ patientId: pid, serviceId: proc.serviceId, notes: proc.notes, settle: 'Wallet' })
       setOk(`${chosenService.name} submitted — ${naira(chosenService.amount)} taken from the wallet. New balance ${naira(r.walletBalance)}.`)
+      /* Every transaction has a receipt: open it for review before printing. */
+      if (r.walletTx) { const rc = receiptFromTx(r.walletTx, picked); setReceipt(rc); setLastReceipt(rc) }
       setProc({ serviceId: '', notes: '' })
       refetchBundle(); refetchServices()
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
@@ -80,8 +88,17 @@ export default function Nursing() {
   return (
     <Layout title="Ward & Nursing">
       <PageHead title="Ward & Nursing Care" sub="Vitals, ward rounds, medication administration, procedures and discharge — every entry joins the patient history." />
-      {err && <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
-      {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok}</div>}
+      {err && (
+        <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Could not save'}>
+          {err}
+        </AlertCard>
+      )}
+      {ok && (
+        <AlertCard tone="green" title="Saved"
+          actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+          {ok}
+        </AlertCard>
+      )}
       <Card title="Select patient" className="mb">
         <div className="search-row">
           <PatientPicker
@@ -167,14 +184,20 @@ export default function Nursing() {
               <textarea className="input" rows={3} placeholder="Site, dressing used, findings…" value={proc.notes} onChange={(e) => setProc({ ...proc, notes: e.target.value })} />
             </Field>
           </div>
-          {chosenService && (
+          {walletShort && (
+            <AlertCard tone="red" title="Top up the patient’s wallet">
+              <b>{chosenService.name}</b> costs <b>{naira(chosenService.amount)}</b> but {picked?.firstName || 'the patient'}’s
+              wallet holds only <b>{naira(Number(picked?.wallet) || 0)}</b>. The transaction will be refused — the accountant
+              must fund the wallet first.
+            </AlertCard>
+          )}
+          {chosenService && !walletShort && (
             <div className="demo-note">
               <b>{chosenService.name}</b> costs <b>{naira(chosenService.amount)}</b>{picked ? <> — {picked.firstName}'s wallet holds <b>{naira(picked.wallet)}</b></> : null}.
-              {walletShort && <span style={{ color: 'var(--amber-600, #b45309)' }}> The balance is short, so the wallet is debited for what it holds and the remainder is raised as a pending payment for the accountant.</span>}
             </div>
           )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button className="btn green" disabled={busy || !pid || !proc.serviceId} onClick={submitProcedure}>
+            <button className="btn green" disabled={busy || !pid || !proc.serviceId || walletShort} onClick={submitProcedure}>
               {busy ? 'Submitting…' : 'Submit Procedure'}
             </button>
           </div>
@@ -199,6 +222,7 @@ export default function Nursing() {
         </Card>
       )}
 
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }

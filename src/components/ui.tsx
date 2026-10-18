@@ -56,6 +56,32 @@ export function Badge({ tone, children }: { tone: 'green' | 'blue' | 'red' | 'am
   return <span className={`badge ${tone}`}>{children}</span>
 }
 
+/* True when a server error is the hard wallet guard — every billing flow
+ * (activation, procedures, dispensing, lab/radiology results, admission bed
+ * charges) refuses the transaction with this message when the patient's wallet
+ * cannot cover the charge. Screens use it to raise the bold "top up" card. */
+export const isTopUpError = (msg: string) => /top up the patient's wallet/i.test(String(msg || ''))
+
+/* Bold, impossible-to-miss message card. Money screens render every failure
+ * (especially "wallet too low — top up first") and every success through this
+ * instead of a quiet inline note. */
+export function AlertCard({ tone = 'red', title, children, actions }: {
+  tone?: 'red' | 'green' | 'amber' | 'blue'
+  title?: React.ReactNode
+  children: React.ReactNode
+  actions?: React.ReactNode
+}) {
+  return (
+    <div className={`alert-card ${tone}`} role="alert">
+      <div className="alert-body">
+        {title && <div className="alert-title">{title}</div>}
+        <div className="alert-msg">{children}</div>
+      </div>
+      {actions && <div className="alert-actions">{actions}</div>}
+    </div>
+  )
+}
+
 export function statusTone(s: string): 'green' | 'blue' | 'red' | 'amber' | 'gray' {
   const map: Record<string, 'green' | 'blue' | 'red' | 'amber' | 'gray'> = {
     Active: 'green', Completed: 'green', Paid: 'green', Dispensed: 'green', Given: 'green',

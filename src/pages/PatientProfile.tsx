@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
-import { Card, Badge, statusTone, Tabs, Timeline, naira } from '../components/ui'
+import { Card, Badge, statusTone, Tabs, Timeline, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, receiptFromPayment, type ReceiptData } from '../components/Receipt'
 import { useAuth } from '../auth'
 import { useFetch, fileUrl } from '../api'
 import { paths, patientApi } from '../endpoints'
-import { whenMs, type Patient } from '../data'
+import { whenMs, type Patient, type Payment, type WalletTx } from '../data'
 
 const TABS = ['Overview', 'Visits', 'Medical History', 'Investigations', 'Prescriptions', 'Procedures', 'Pharmacy', 'Payments', 'Wallet', 'Activity']
 type Any = Record<string, any>
@@ -21,6 +22,9 @@ export default function PatientProfile() {
      every render — otherwise React throws "Rendered more hooks than during the
      previous render". */
   const [busy, setBusy] = useState(false)
+  /* Receipt for the last charge / the row whose Receipt button was hit. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
 
   if (loading || !b) return <Layout title="Patient Profile"><div className="muted">Loading…</div></Layout>
   if (error) return <Layout title="Patient Profile"><div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{error} — <Link to="/patients">← Back to patients</Link></div></Layout>
@@ -144,6 +148,8 @@ export default function PatientProfile() {
         ? `Patient activated. Activation fee ₦${Number(r.activationFee).toLocaleString()} taken from the wallet — new balance ₦${Number(r.wallet).toLocaleString()}.`
         : 'Patient activated.'
         + (r.visitId ? ` Visit ${r.visitId} is open for the nurse to record vitals.` : ''))
+      /* The activation charge always has a receipt — open it before printing. */
+      if (r.walletTx) { const rc = receiptFromTx(r.walletTx, p); setReceipt(rc); setLastReceipt(rc) }
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -167,7 +173,6 @@ export default function PatientProfile() {
               {p.status === 'Active'
                 ? <button className="btn ghost sm" onClick={() => setStatus('Inactive')}>Mark Inactive</button>
                 : isRecordsOfficer && <button className="btn green sm" disabled={busy} onClick={activate}>{busy ? 'Activating…' : 'Activate Patient'}</button>}
-              {err && <span className="muted" style={{ fontSize: 11, maxWidth: 200 }}>{err}</span>}
               <span className="muted" style={{ fontSize: 11, maxWidth: 200 }}>
                 {isRecordsOfficer ? 'Only the Records Officer can activate. Status changes never delete history.' : 'Only the Records Officer can activate a patient.'}
               </span>
@@ -175,7 +180,17 @@ export default function PatientProfile() {
           )}
         </div>
       </Card>
-      {note && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{note}</div>}
+      {err && (
+        <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Action failed'}>
+          {err}
+        </AlertCard>
+      )}
+      {note && (
+        <AlertCard tone="green" title="Patient activated"
+          actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+          {note}
+        </AlertCard>
+      )}
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'Overview' && (
         <div className="grid cols-2">
@@ -241,14 +256,15 @@ export default function PatientProfile() {
       {tab === 'Prescriptions' && (
         <Card title="Prescriptions">
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>RX</th><th>Date</th><th>Drug</th><th>Route</th><th>Frequency</th><th>Duration</th><th>Qty</th><th>Total</th><th>Status</th></tr></thead>
+            <thead><tr><th>RX</th><th>Date</th><th>Drug</th><th>Dose</th><th>Route</th><th>Frequency</th><th>Duration</th><th>Qty</th><th>Total</th><th>Status</th></tr></thead>
             <tbody>
-              {prescriptions.length === 0 && <tr><td colSpan={9} className="muted">No prescriptions yet.</td></tr>}
+              {prescriptions.length === 0 && <tr><td colSpan={10} className="muted">No prescriptions yet.</td></tr>}
               {prescriptions.flatMap((r: Any) => ((r.items || []).length ? r.items : [{}]).map((i: Any, idx: number) => (
                 <tr key={`${r.id}-${idx}`}>
                   <td>{idx === 0 ? r.id : ''}</td>
                   <td>{idx === 0 ? r.createdAt : ''}</td>
                   <td>{i.drug || '—'}</td>
+                  <td><b>{i.dose || '—'}</b></td>
                   <td>{i.route || '—'}</td>
                   <td>{i.frequency || '—'}</td>
                   <td>{i.duration ? `${i.duration} day${Number(i.duration) === 1 ? '' : 's'}` : '—'}</td>
@@ -259,7 +275,7 @@ export default function PatientProfile() {
               )))}
             </tbody>
           </table></div>
-          <div className="muted" style={{ padding: '12px 14px' }}>Each line records the drug, route of administration, frequency, course length in days and quantity.</div>
+          <div className="muted" style={{ padding: '12px 14px' }}>Each line records the drug, dose strength, route of administration, frequency, course length in days and quantity.</div>
         </Card>
       )}
 
@@ -288,11 +304,12 @@ export default function PatientProfile() {
       {tab === 'Pharmacy' && (
         <Card title="Dispensing Record">
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>RX</th><th>Drug</th><th>Route</th><th>Frequency</th><th>Duration</th><th>Qty</th><th>Status</th></tr></thead>
+            <thead><tr><th>RX</th><th>Drug</th><th>Dose</th><th>Route</th><th>Frequency</th><th>Duration</th><th>Qty</th><th>Status</th></tr></thead>
             <tbody>
               {prescriptions.flatMap((r: Any) => (r.items || []).map((i: Any, idx: number) => (
                 <tr key={r.id + idx}>
                   <td>{r.id}</td><td>{i.drug}</td>
+                  <td><b>{i.dose || '—'}</b></td>
                   <td>{i.route || '—'}</td><td>{i.frequency || '—'}</td>
                   <td>{i.duration ? `${i.duration}d` : '—'}</td>
                   <td>{i.qty}</td>
@@ -308,9 +325,12 @@ export default function PatientProfile() {
       {tab === 'Payments' && (
         <Card title="Payments">
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>Reference</th><th>Service</th><th>Method</th><th>Amount</th><th>Date/Time</th><th>Status</th></tr></thead>
+            <thead><tr><th>Reference</th><th>Service</th><th>Method</th><th>Amount</th><th>Date/Time</th><th>Status</th><th></th></tr></thead>
             <tbody>{payments.map((t: Any) => (
-              <tr key={t.id}><td>{t.ref}</td><td>{t.service}</td><td>{t.method}</td><td className="money">{naira(t.amount || 0)}</td><td>{t.at}</td><td><Badge tone={t.status === 'Paid' ? 'green' : 'amber'}>{t.status}</Badge></td></tr>
+              <tr key={t.id}><td>{t.ref}</td><td>{t.service}</td><td>{t.method}</td><td className="money">{naira(t.amount || 0)}</td><td>{t.at}</td><td><Badge tone={t.status === 'Paid' ? 'green' : 'amber'}>{t.status}</Badge></td>
+                <td className="right"><button className="btn ghost sm"
+                  onClick={() => setReceipt(receiptFromPayment(t as Payment, walletTxs.find((w: Any) => w.id === t.txId) as WalletTx | undefined, p))}
+                >Receipt</button></td></tr>
             ))}</tbody>
           </table></div>
         </Card>
@@ -319,10 +339,13 @@ export default function PatientProfile() {
       {tab === 'Wallet' && (
         <Card title={`Wallet — balance ${naira(p.wallet || 0)}`}>
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>TX</th><th>Date/Time</th><th>Type</th><th>Amount</th><th>Reason</th><th>Staff</th><th>Method</th><th>Balance After</th></tr></thead>
+            <thead><tr><th>TX</th><th>Date/Time</th><th>Type</th><th>Amount</th><th>Reason</th><th>Staff</th><th>Method</th><th>Balance After</th><th></th></tr></thead>
             <tbody>{walletTxs.map((t: Any) => (
               <tr key={t.id}><td>{t.id}</td><td>{t.at}</td><td><Badge tone={t.type === 'Credit' ? 'green' : 'blue'}>{t.type}</Badge></td>
-                <td className="money">{t.type === 'Credit' ? '+' : '−'}{naira(t.amount || 0)}</td><td>{t.reason}</td><td>{t.staff}</td><td>{t.method}</td><td className="money">{naira(t.balanceAfter || 0)}</td></tr>
+                <td className="money">{t.type === 'Credit' ? '+' : '−'}{naira(t.amount || 0)}</td><td>{t.reason}</td><td>{t.staff}</td><td>{t.method}</td><td className="money">{naira(t.balanceAfter || 0)}</td>
+                <td className="right"><button className="btn ghost sm"
+                  onClick={() => setReceipt(receiptFromTx(t as WalletTx, p))}
+                >Receipt</button></td></tr>
             ))}</tbody>
           </table></div>
         </Card>
@@ -336,9 +359,12 @@ export default function PatientProfile() {
 
 
       <div className="mt muted" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        Every tab is filtered by your role's permissions.
+        Every tab is filtered by your role's permissions. Every wallet transaction and payment has a receipt —
+        open it from the row to view, download or print it.
         <Link to="/patients" style={{ marginLeft: 'auto' }}>← Back to patients</Link>
       </div>
+
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }

@@ -6,7 +6,7 @@
  * Mirror of backend/src/routes — keep the two in sync.
  * ========================================================================== */
 import { api, type User } from './api'
-import type { Patient } from './data'
+import type { Patient, Payment, WalletTx } from './data'
 
 /* ---------- READ PATHS (GET) ---------- */
 export const paths = {
@@ -78,20 +78,24 @@ export const patientApi = {
   setStatus: (patientId: string, status: 'Active' | 'Inactive') =>
     api.post(`/api/patients/${patientId}/status`, { status }),
   /** Records Officer only. The API deducts the configured activation fee from
-      the patient's wallet, opens the episode's visit when none is open, and
-      returns the new balance. */
+      the patient's wallet (refusing when the wallet cannot cover it), opens the
+      episode's visit when none is open, and returns the new balance plus the
+      wallet-ledger row — the activation receipt. */
   activate: (patientId: string) =>
-    api.post<{ activationFee: number; wallet: number; status: string; visitId?: string | null }>(
+    api.post<{ activationFee: number; wallet: number; status: string; visitId?: string | null; walletTx?: WalletTx | null }>(
       `/api/patients/${patientId}/activate`, {}),
 }
 
 /* ---------- PROCEDURES / SERVICES ---------- */
 export interface RxDraftLine {
-  drugId: string; qty: number
+  drugId: string; qty: number; dose?: string
   route: string; frequency: string; duration: number
 }
 export const serviceApi = {
   /** Record a procedure/service performed on a patient (bills their wallet).
+   *  The wallet must cover the total in full — a short wallet is refused with
+   *  the "top up the patient's wallet" error. On success the response carries
+   *  the wallet-ledger row (the receipt) for the receipt modal.
    *  The server multiplies the catalogue unit price by `qty` (default 1 if omitted). */
   perform: (body: {
     patientId: string
@@ -99,7 +103,7 @@ export const serviceApi = {
     qty?: number
     notes?: string
     settle?: 'Wallet' | 'Cash' | 'Transfer' | 'POS'
-  }) => api.post<{ procedure: unknown; walletBalance: number }>('/api/services/perform', body),
+  }) => api.post<{ procedure: unknown; walletBalance: number; walletTx?: WalletTx | null; payment?: Payment | null }>('/api/services/perform', body),
 }
 
 /* ---------- PROCEDURE INVENTORY (procedure / amount / quantity) ---------- */
@@ -125,9 +129,19 @@ export const inventoryApi = {
 }
 
 /* ---------- VISITS & CONSULTATION ---------- */
+export interface ConsultationResult {
+  admission?: {
+    id: string; totalCost: number; ward: string; bed: string
+    /* The wallet-ledger row for the bed charge — the admission receipt. */
+    walletTx?: WalletTx | null
+  }
+  [k: string]: unknown
+}
 export const visitApi = {
+  /** Admissions bill the bed charge to the wallet — refused outright (with the
+   *  "top up the patient's wallet" error) when the wallet cannot cover it. */
   consultation: (visitId: string, body: Record<string, unknown>) =>
-    api.post(`/api/visits/${visitId}/consultation`, body),
+    api.post<ConsultationResult>(`/api/visits/${visitId}/consultation`, body),
 }
 
 /* ---------- NURSING ---------- */
@@ -150,13 +164,16 @@ export const admissionApi = {
 
 /* ---------- LAB & RADIOLOGY ---------- */
 /** The money the laboratory moved when a result was submitted. `walletBalance`
- *  is null when the patient had no wallet entry for this test. */
+ *  is null when the patient had no wallet entry for this test. `walletTx` is
+ *  the wallet-ledger row — the receipt — refused (with the "top up the
+ *  patient's wallet" error) when the wallet cannot cover the fee. */
 export interface InvestigationResult {
   price: number
   debitedFromWallet: number
   outstanding: number
   walletBalance: number | null
   status: string
+  walletTx?: WalletTx | null
 }
 export const investigationApi = {
   /** Submitting a result charges the test's price to the patient's wallet. */
@@ -166,12 +183,14 @@ export const investigationApi = {
 
 /* ---------- PHARMACY ---------- */
 export const prescriptionApi = {
-  /** Dispensing always takes the cost from the wallet first; any shortfall is
-      raised as a pending payment for the accountant. */
+  /** Dispensing takes the whole cost from the wallet — refused outright (with
+      the "top up the patient's wallet" error) when the wallet cannot cover it.
+      The response carries the wallet-ledger row (the receipt). */
   dispense: (prescriptionId: string, body: { method: string; items: { drugId: string; qty: number }[] }) =>
     api.post<{
       total: number; debitedFromWallet: number; outstanding: number
       walletBalance: number; shortages?: string[]
+      walletTx?: WalletTx | null
     }>(`/api/prescriptions/${prescriptionId}/dispense`, body),
 }
 
@@ -188,6 +207,8 @@ export const testApi = {
 
 /* ---------- FINANCE ---------- */
 export const walletApi = {
+  /** Funds a patient's wallet. The response carries `tx` — the wallet-ledger
+      row, i.e. the receipt for this funding. */
   fund: (body: { patientId: string; amount: number; method: string; reference?: string }) =>
-    api.post<{ balance: number }>('/api/wallet/fund', body),
+    api.post<{ balance: number; tx?: WalletTx; payment?: Payment }>('/api/wallet/fund', body),
 }

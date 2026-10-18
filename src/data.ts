@@ -28,6 +28,9 @@ export interface Investigation {
  * (Daily/BD/TDS/noctal/PRN/4hrly…24hrly) + duration in days + quantity. */
 export interface RxItem {
   drugId: string; drug: string
+  /* Dosage strength per unit, e.g. 80mg — entered by the doctor at
+     consultation, shown everywhere the prescription records show. */
+  dose?: string
   route: 'IV' | 'IM' | 'Oral' | 'Rectal'
   frequency: 'Daily' | 'BD' | 'TDS' | 'Noctal' | 'PRN' | '4hrly' | '6hrly' | '8hrly' | '12hrly' | '24hrly'
   duration: number
@@ -42,9 +45,15 @@ export interface Prescription {
 
 export interface Vital { id: string; patientId: string; visitId: string; staff: string; temp: string; bp: string; pulse: string; resp: string; spo2: string; weight: string; at: string }
 
-export interface Payment { id: string; ref: string; patientId: string; patientName: string; amount: number; method: string; service: string; staff: string; at: string; status: 'Paid' | 'Pending' }
+export interface Payment { id: string; ref: string; patientId: string; patientName: string; amount: number; method: string; service: string; staff: string; at: string; status: 'Paid' | 'Pending'
+  /* Receipt facts — denormalised by the API so every payment can print a
+     receipt. `txId` links a payment to the wallet ledger row it produced. */
+  patientSex?: string; staffRole?: string; txId?: string }
 
-export interface WalletTx { id: string; patientId: string; type: 'Credit' | 'Debit'; amount: number; reason: string; method: string; staff: string; at: string; balanceAfter: number }
+export interface WalletTx { id: string; patientId: string; type: 'Credit' | 'Debit'; amount: number; reason: string; method: string; staff: string; at: string; balanceAfter: number
+  /* Receipt facts — written by the API at transaction time (legacy rows are
+     backfilled from the patient register server-side). */
+  patientName?: string; patientSex?: string; staffRole?: string }
 
 /* An admission carries the length of stay and the nightly bed charge, so the
  * total billed is days × cost per night. */

@@ -44,8 +44,9 @@ export default function Admissions() {
           ))}</tbody>
         </table></div>
         <div className="muted" style={{ padding: '12px 14px' }}>
-          Bed charge = days × cost per night. It is taken from the patient's wallet on admission; if the balance is short the
-          accountant is notified and the amount stays outstanding.
+          Bed charge = days × cost per night. It is taken from the patient's wallet on admission — the wallet must cover
+          it in full, so an admission is refused (with a bold "top up the patient's wallet" message) until the accountant
+          funds the wallet.
         </div>
       </Card>
       {dis && (

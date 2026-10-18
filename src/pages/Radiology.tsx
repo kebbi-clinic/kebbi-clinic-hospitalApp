@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Badge, statusTone, Modal, naira } from '../components/ui'
+import { Card, PageHead, Badge, statusTone, Modal, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { useFetch, useRealtime, fileUrl } from '../api'
 import { investigationApi, paths } from '../endpoints'
 import type { Investigation } from '../data'
@@ -13,6 +14,9 @@ export default function Radiology() {
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
   const [view, setView] = useState<Investigation | null>(null)
+  /* Receipt for the last charged report — review before printing. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
   const { data: list = [], refetch } = useFetch<Investigation[]>(paths.investigations('Radiology'))
 
   /* New requests / results appear live — no manual refresh needed. */
@@ -25,13 +29,15 @@ export default function Radiology() {
       const fd = new FormData()
       fd.append('values', values)
       if (file) fd.append('image', file)
-      /* Same rule as the laboratory: the test fee comes off the wallet on submit. */
+      /* Same rule as the laboratory: the test fee comes off the wallet on
+         submit — refused with a bold "top up" error when it cannot. */
       const r = await investigationApi.saveResult(upload.id, fd)
       const parts = [`${upload.test} submitted.`]
       if (r.price > 0) {
         parts.push(`${naira(r.debitedFromWallet)} taken from the patient's wallet (charge ${naira(r.price)}).`)
         if (r.walletBalance != null) parts.push(`Balance ${naira(r.walletBalance)}.`)
-        if (r.outstanding > 0) parts.push(`${naira(r.outstanding)} outstanding — the accountant has been notified.`)
+        /* Every transaction has a receipt: open it for review before printing. */
+        if (r.walletTx) { const rc = receiptFromTx(r.walletTx); setReceipt(rc); setLastReceipt(rc) }
       } else {
         parts.push('No fee configured for this test, so nothing was charged.')
       }
@@ -43,9 +49,18 @@ export default function Radiology() {
 
   return (
     <Layout title="Radiology">
-      <PageHead title="Radiology Requests" sub="Same workflow as laboratory: receive request (latest first) → perform → upload report photo OR type the findings — linked to patient & visit. The test fee is taken from the patient's wallet when you submit.">
-        {ok && <Badge tone="green">{ok}</Badge>}
-      </PageHead>
+      <PageHead title="Radiology Requests" sub="Same workflow as laboratory: receive request (latest first) → perform → upload report photo OR type the findings — linked to patient & visit. The test fee is taken from the patient's wallet when you submit (refused until the patient tops up)." />
+      {ok && (
+        <AlertCard tone="green" title="Report submitted"
+          actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+          {ok}
+        </AlertCard>
+      )}
+      {err && (
+        <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Could not submit the report'}>
+          {err}
+        </AlertCard>
+      )}
       <Card title="Requests">
         <div className="tbl-wrap"><table className="tbl">
           <thead><tr><th>ID</th><th>Patient</th><th>Investigation</th><th>Requested By</th><th>Date</th><th>Status</th><th></th></tr></thead>
@@ -63,7 +78,11 @@ export default function Radiology() {
       {upload && (
         <Modal title={`Upload Report — ${upload.test} (${upload.id})`} onClose={() => setUpload(null)}
           footer={<><button className="btn ghost" onClick={() => setUpload(null)}>Cancel</button><button className="btn green" disabled={busy} onClick={submit}>{busy ? 'Uploading…' : 'Submit Report'}</button></>}>
-          {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
+          {err && (
+            <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Could not submit the report'}>
+              {err}
+            </AlertCard>
+          )}
           <label className="upload-box" style={{ display: 'block' }}>
             {file ? <>Selected: <b>{file.name}</b></> : <>📷 Optional — attach a report photo / scan<br /><span className="muted">…or just type the findings below — either one is enough</span></>}
             <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" style={{ display: 'none' }} onChange={(e) => setFile(e.target.files?.[0] || null)} />
@@ -89,6 +108,7 @@ export default function Radiology() {
           </>)}
         </Modal>
       )}
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }

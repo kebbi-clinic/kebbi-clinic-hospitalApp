@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Field, Badge, naira } from '../components/ui'
+import { Card, PageHead, Field, Badge, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { api, useFetch } from '../api'
 import { paths, patientApi, visitApi } from '../endpoints'
 import { PatientPicker } from '../components/PatientSearch'
 import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Settings, type TestItem, type Visit } from '../data'
 
-/* One prescription line being drafted: drug, route, frequency, duration, qty. */
-interface Row { drugId: string; qty: number; route: string; frequency: string; duration: number }
+/* One prescription line being drafted: drug, dose strength, route, frequency,
+   duration (days) + quantity. */
+interface Row { drugId: string; dose: string; qty: number; route: string; frequency: string; duration: number }
 
-const newRow = (): Row => ({ drugId: '', qty: 10, route: 'Oral', frequency: 'Daily', duration: 5 })
+const newRow = (): Row => ({ drugId: '', dose: '', qty: 10, route: 'Oral', frequency: 'Daily', duration: 5 })
 
 const plural = (n: number) => (n === 1 ? '' : 's')
 
@@ -63,6 +65,9 @@ export default function Consultation() {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
+  /* Receipt for the bed charge of the last admission — review before printing. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
 
   /* Pre-fill the nightly rate from settings as soon as they arrive. */
   useEffect(() => {
@@ -77,6 +82,10 @@ export default function Consultation() {
   const total = rows.reduce((s, r) => s + price(r.drugId) * (Number(r.qty) || 0), 0)
   const nights = Math.max(1, Number(days) || 1)
   const bedTotal = nights * (Number(costPerNight) || 0)
+  /* Hard wallet rule: the bed charge must fit the wallet in full — the API
+     refuses the whole consultation otherwise, so warn up-front. */
+  const bedShort = outcome === 'Admission' && bedTotal > 0
+    && patient != null && Number(patient.wallet || 0) < bedTotal
   const routes = settings?.rxRoutes?.length ? settings.rxRoutes : RX_ROUTES
   const frequencies = settings?.rxFrequencies?.length ? settings.rxFrequencies : RX_FREQUENCIES
 
@@ -91,11 +100,11 @@ export default function Consultation() {
         ...form,
         investigations: [...tests, ...radTests],
         invDept: Object.fromEntries(radTests.map((t) => [t, 'Radiology'])),
-        /* Each line: drug + route + frequency + duration (days) + quantity. */
+        /* Each line: drug + dose strength + route + frequency + duration (days) + quantity. */
         items: rows
           .filter((r) => r.drugId && Number(r.qty) > 0)
           .map((r) => ({
-            drugId: r.drugId, qty: Number(r.qty) || 0,
+            drugId: r.drugId, dose: String(r.dose || '').trim().slice(0, 40), qty: Number(r.qty) || 0,
             route: r.route, frequency: r.frequency,
             duration: Math.max(1, Number(r.duration) || 1),
           })),
@@ -104,10 +113,13 @@ export default function Consultation() {
         /* Only send the bed charge when actually admitting. */
         ...(outcome === 'Admission' ? { days: nights, costPerNight: Number(costPerNight) || 0 } : {}),
       })
-      const adm = (r as { admission?: { id: string; totalCost: number; ward: string; bed: string } }).admission
+      const adm = r.admission
       setOk(adm
         ? `Consultation saved. Patient admitted to ${adm.ward} bed ${adm.bed} (${adm.id}) — bed charge ${naira(adm.totalCost)} taken from the wallet.`
         : 'Consultation saved — lab/radiology requests and prescription delivered to the right queues.')
+      /* Every transaction has a receipt: the bed charge's ledger row rides back
+         with the admission — open it for review before printing. */
+      if (adm?.walletTx) { const rc = receiptFromTx(adm.walletTx); setReceipt(rc); setLastReceipt(rc) }
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -133,8 +145,17 @@ export default function Consultation() {
             </div>
           )}
           {lastVitals && <div className="demo-note mb">Last vitals ({lastVitals.at}, {lastVitals.staff}): T {lastVitals.temp} · BP {lastVitals.bp} · P {lastVitals.pulse} · SpO₂ {lastVitals.spo2} · Wt {lastVitals.weight}</div>}
-          {err && <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
-          {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok} <Link to="/dashboard">Back to dashboard</Link></div>}
+          {err && (
+            <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Could not save the consultation'}>
+              {err}
+            </AlertCard>
+          )}
+          {ok && (
+            <AlertCard tone="green" title="Consultation saved"
+              actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+              {ok} <Link to="/dashboard">Back to dashboard</Link>
+            </AlertCard>
+          )}
           <div className="grid cols-2">
             <Card title="Clinical Notes">
               <Field label="Presenting Complaint"><textarea className="input" rows={2} value={form.complaint} onChange={(e) => setForm({ ...form, complaint: e.target.value })} /></Field>
@@ -172,15 +193,16 @@ export default function Consultation() {
               <div className="muted mt">The laboratory / radiology dashboards receive these requests instantly. The fee is taken from the patient's wallet when the result is uploaded.</div>
             </Card>
           </div>
-          <Card title="Prescription" className="mt" actions={<span className="muted">Drug · Route · Frequency · Duration · Qty — prices from pharmacy inventory</span>}>
+          <Card title="Prescription" className="mt" actions={<span className="muted">Drug · Dose · Route · Frequency · Duration · Qty — prices from pharmacy inventory</span>}>
             <div className="tbl-wrap"><table className="tbl">
-              <thead><tr><th>Drug</th><th>Route</th><th>Frequency</th><th>Duration (days)</th><th>Qty</th><th>Unit Price</th><th>Total</th><th></th></tr></thead>
+              <thead><tr><th>Drug</th><th>Dose</th><th>Route</th><th>Frequency</th><th>Duration (days)</th><th>Qty</th><th>Unit Price</th><th>Total</th><th></th></tr></thead>
               <tbody>
                 {rows.map((r, idx) => (
                   <tr key={idx}>
                     <td><select className="input" style={{ width: 220 }} value={r.drugId} onChange={(e) => setRows(rows.map((x, i) => i === idx ? { ...x, drugId: e.target.value } : x))}>
                       <option value="">Select drug…</option>{drugs.map((d) => <option key={d.id} value={d.id} disabled={d.stock === 0}>{d.name} (stock {d.stock})</option>)}
                     </select></td>
+                    <td><input className="input" style={{ width: 92 }} placeholder="80mg" value={r.dose} maxLength={40} onChange={(e) => setRows(rows.map((x, i) => i === idx ? { ...x, dose: e.target.value.replace(/[^a-zA-Z0-9 .%/µ-]/g, '') } : x))} /></td>
                     <td><select className="input" style={{ width: 96 }} value={r.route} onChange={(e) => setRows(rows.map((x, i) => i === idx ? { ...x, route: e.target.value } : x))}>
                       {routes.map((o) => <option key={o}>{o}</option>)}
                     </select></td>
@@ -195,7 +217,7 @@ export default function Consultation() {
                     <td><button className="btn danger sm" type="button" onClick={() => setRows(rows.filter((_, i) => i !== idx))}>Remove</button></td>
                   </tr>
                 ))}
-                <tr><td colSpan={6} className="right"><b>Prescription total</b></td><td className="money">{naira(total)}</td><td /></tr>
+                <tr><td colSpan={7} className="right"><b>Prescription total</b></td><td className="money">{naira(total)}</td><td /></tr>
               </tbody>
             </table></div>
             <button className="btn ghost sm mt" type="button" onClick={() => setRows([...rows, newRow()])}>+ Add Drug</button>
@@ -216,16 +238,24 @@ export default function Consultation() {
               </>)}
               <button className="btn primary" disabled={busy || !visitId} onClick={save}>{busy ? 'Saving…' : 'Save Consultation'}</button>
             </div>
-            {outcome === 'Admission' && (
+            {outcome === 'Admission' && bedShort && (
+              <AlertCard tone="red" title="Top up the patient’s wallet">
+                The bed charge is <b>{naira(bedTotal)}</b> ({nights} night{plural(nights)} × {naira(Number(costPerNight) || 0)})
+                but {patient.firstName}’s wallet holds only <b>{naira(Number(patient.wallet) || 0)}</b>.
+                The admission will be refused — ask the accountant to top up the wallet first.
+              </AlertCard>
+            )}
+            {outcome === 'Admission' && !bedShort && (
               <div className="muted mt">
                 {nights} night{plural(nights)} × {naira(Number(costPerNight) || 0)} = <b>{naira(bedTotal)}</b>, taken from the patient's wallet on admission
-                (a pending payment is raised if the balance is short).
+                (the wallet must cover it in full — you will be asked to top up if the balance is short).
               </div>
             )}
           </Card>
 
         </>
       )}
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }

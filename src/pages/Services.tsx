@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Field, StatCard, naira } from '../components/ui'
+import { Card, PageHead, Field, StatCard, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { useFetch } from '../api'
 import { paths, serviceApi } from '../endpoints'
 import { PatientPicker } from '../components/PatientSearch'
@@ -32,6 +33,9 @@ export default function Services() {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
+  /* Receipt for the last recorded procedure — shown for review before printing. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
 
   const recordRef = useRef<HTMLDivElement | null>(null)
 
@@ -73,6 +77,8 @@ export default function Services() {
     try {
       const r = await serviceApi.perform({ patientId, serviceId, qty: quantity, notes, settle: 'Wallet' })
       setOk(`Recorded ${quantity} × ${chosen?.name} — ₦${total.toLocaleString()} taken from the wallet. New balance ₦${Number(r.walletBalance).toLocaleString()}.`)
+      /* Every transaction has a receipt: open it for review before printing. */
+      if (r.walletTx) { const rc = receiptFromTx(r.walletTx, patient); setReceipt(rc); setLastReceipt(rc) }
       setServiceId(''); setQty('1'); setNotes('')
       setLinkedWallet(Number(r.walletBalance))
       if (picked && picked.id === patientId) setPicked({ ...picked, wallet: Number(r.walletBalance) })
@@ -82,8 +88,17 @@ export default function Services() {
   return (
     <Layout title="Procedures & Services">
       <PageHead title="Procedures & Services" sub="Record a procedure or service performed on a patient. The unit price comes from the catalogue; the total is unit price × quantity and is billed to the patient's wallet." />
-      {err && <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
-      {ok && <div className="demo-note mb" style={{ background: 'var(--green-100)', color: 'var(--green-600)' }}>{ok}</div>}
+      {err && (
+        <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Could not record the procedure'}>
+          {err}
+        </AlertCard>
+      )}
+      {ok && (
+        <AlertCard tone="green" title="Procedure recorded"
+          actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+          {ok}
+        </AlertCard>
+      )}
       {servicesErr && (
         <div className="demo-note mb" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>
           The procedures catalogue could not be loaded ({servicesErr}) — the dropdown will stay empty.{' '}
@@ -142,11 +157,16 @@ export default function Services() {
             </Field>
           </div>
 
+          {chosen && !affordable && patientWallet != null && (
+            <AlertCard tone="red" title="Top up the patient’s wallet">
+              <b>{chosen.name}</b> costs <b>{naira(total)}</b> but {patientName || 'this patient'}’s wallet holds only{' '}
+              <b>{naira(patientWallet)}</b>. The transaction will be refused — fund the wallet first.
+            </AlertCard>
+          )}
           {chosen && (
             <div className="demo-note">
               <b>{quantity} × {chosen.name}</b> at <b>{naira(unit)}</b> each = <b>{naira(total)}</b>, taken from the patient's wallet.
               {patientWallet == null && <span style={{ color: 'var(--muted)' }}> The wallet balance is only shown once the patient is picked.</span>}
-              {patientWallet != null && !affordable && <span style={{ color: 'var(--red-600)' }}>{' '}The wallet only holds {naira(patientWallet)} — the accountant must fund it first.</span>}
             </div>
           )}
 
@@ -196,6 +216,8 @@ export default function Services() {
           Pick a patient above first — every entry is written to that patient's permanent record, activity timeline and billing history.
         </div>
       </Card>
+
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }

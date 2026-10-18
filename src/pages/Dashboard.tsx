@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Layout } from '../components/Layout'
 import { StatCard, Card, Badge, statusTone, naira } from '../components/ui'
+import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { useAuth } from '../auth'
 import { useFetch, useRealtime } from '../api'
 import { paths } from '../endpoints'
+import type { WalletTx } from '../data'
 
 type Any = Record<string, any>
 
@@ -223,6 +225,8 @@ function AcctDash({ s, data }: { s: Any; data: Any }) {
   }
   const rows = (inventory.items || []).slice(0, 8)
   const t = inventory.totals || {}
+  /* Every wallet transaction has a receipt — review before printing. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   return (<>
       <div className="grid cols-4 mb">
         <StatCard icon="money" value={naira(s.revenue)} label="Revenue (all paid)" tone="green" />
@@ -264,12 +268,17 @@ function AcctDash({ s, data }: { s: Any; data: Any }) {
 
       <Card title="Recent Wallet Transactions">
         <div className="tbl-wrap"><table className="tbl">
-          <thead><tr><th>Patient</th><th>Type</th><th>Amount</th><th>Reason</th><th>Method</th><th>Balance After</th></tr></thead>
-          <tbody>{(data.txs || []).map((t: Any) => (
-            <tr key={t.id}><td>{t.patientId}</td><td><Badge tone={t.type === 'Credit' ? 'green' : 'blue'}>{t.type}</Badge></td><td className="money">{t.type === 'Credit' ? '+' : '−'}{naira(t.amount)}</td><td>{t.reason}</td><td>{t.method}</td><td className="money">{naira(t.balanceAfter)}</td></tr>
+          <thead><tr><th>Patient</th><th>Type</th><th>Amount</th><th>Reason</th><th>Method</th><th>Balance After</th><th></th></tr></thead>
+          <tbody>{(data.txs || []).map((tx: Any) => (
+            <tr key={tx.id}><td>{tx.patientName || tx.patientId}</td><td><Badge tone={tx.type === 'Credit' ? 'green' : 'blue'}>{tx.type}</Badge></td><td className="money">{tx.type === 'Credit' ? '+' : '−'}{naira(tx.amount)}</td><td>{tx.reason}</td><td>{tx.method}</td><td className="money">{naira(tx.balanceAfter)}</td>
+              <td className="right"><button className="btn ghost sm"
+                onClick={() => setReceipt(receiptFromTx(tx as WalletTx))}
+              >Receipt</button></td></tr>
           ))}</tbody>
         </table></div>
       </Card>
+
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
   </>)
 }
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Layout } from '../components/Layout'
-import { Card, PageHead, Tabs, Badge, StatCard, Modal, Field, naira } from '../components/ui'
+import { Card, PageHead, Tabs, Badge, StatCard, Modal, Field, naira, AlertCard, isTopUpError } from '../components/ui'
+import { ReceiptModal, receiptFromTx, receiptFromPayment, type ReceiptData } from '../components/Receipt'
 import { useFetch } from '../api'
 import { paths, walletApi } from '../endpoints'
 import { PatientSearch, SearchBox, filterPatients, matchesFields } from '../components/PatientSearch'
@@ -29,6 +30,11 @@ export default function Accounting() {
   const [err, setErr] = useState('')
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
+  /* The receipt for the last funding / the row whose Receipt button was hit —
+     opens the view-before-print modal. `lastReceipt` keeps the last successful
+     transaction's receipt reachable from the success card after it is closed. */
+  const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
 
   const { data: paymentsRaw } = useFetch<unknown>(paths.payments)
   const { data: txsRaw } = useFetch<unknown>(paths.walletTxs)
@@ -50,6 +56,11 @@ export default function Accounting() {
     const m = new Map(patients.map((p) => [p.id, `${p.firstName} ${p.surname}`]))
     return (id: string) => m.get(id) || ''
   }, [patients])
+
+  /* Receipt helpers: patient record fills sex/name on legacy rows, and wallet
+   * ledger rows are matched to their payment through `txId`. */
+  const patientById = useMemo(() => new Map(patients.map((p) => [p.id, p])), [patients])
+  const txById = useMemo(() => new Map(txs.map((t) => [t.id, t])), [txs])
 
   /* Stable so the SearchBox memo never re-filters on every render. */
   const payFields = useMemo(
@@ -84,15 +95,21 @@ export default function Accounting() {
     try {
       const r = await walletApi.fund({ patientId: fund.id, amount: Number(form.amount), method: form.method, reference: form.reference })
       setOk(`Wallet funded — new balance ₦${r.balance.toLocaleString()} (${fund.id}). A transaction record was created.`)
+      /* Every transaction has a receipt: open it for review before printing. */
+      if (r.tx) { const rc = receiptFromTx(r.tx, fund); setReceipt(rc); setLastReceipt(rc) }
       setFund(null); refetch()
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
   return (
     <Layout title="Payments & Wallets">
-      <PageHead title="Payments & Wallets" sub="Every balance change must create a transaction record — balances are never edited directly.">
-        {ok && <Badge tone="green">{ok}</Badge>}
-      </PageHead>
+      <PageHead title="Payments & Wallets" sub="Every balance change must create a transaction record — balances are never edited directly." />
+      {ok && (
+        <AlertCard tone="green" title="Transaction successful"
+          actions={lastReceipt ? <button className="btn primary sm" onClick={() => setReceipt(lastReceipt)}>View Receipt</button> : undefined}>
+          {ok}
+        </AlertCard>
+      )}
       <div className="grid cols-4 mb">
         <StatCard icon="money" value={naira(paid.reduce((s, p) => s + p.amount, 0))} label="Revenue (paid)" tone="green" />
         <StatCard icon="wallet" value={naira(funding)} label="Wallet Funding" tone="blue" />
@@ -114,13 +131,16 @@ export default function Accounting() {
             hint={<>Type a patient's <b>name</b> or <b>KBC-… ID</b> — or a payment reference</>}
           />
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>Reference</th><th>Patient</th><th>Service</th><th>Method</th><th>Amount</th><th>Staff</th><th>Date/Time</th><th>Status</th></tr></thead>
+            <thead><tr><th>Reference</th><th>Patient</th><th>Service</th><th>Method</th><th>Amount</th><th>Staff</th><th>Date/Time</th><th>Status</th><th></th></tr></thead>
             <tbody>{shownPayments.map((p) => (
               <tr key={p.id}><td>{p.ref}</td><td>{p.patientName}<div className="muted">{p.patientId}</div></td><td>{p.service}</td><td>{p.method}</td>
-                <td className="money">{naira(p.amount)}</td><td>{p.staff}</td><td>{p.at}</td><td><Badge tone={p.status === 'Paid' ? 'green' : 'amber'}>{p.status}</Badge></td></tr>
+                <td className="money">{naira(p.amount)}</td><td>{p.staff}</td><td>{p.at}</td><td><Badge tone={p.status === 'Paid' ? 'green' : 'amber'}>{p.status}</Badge></td>
+                <td className="right"><button className="btn ghost sm"
+                  onClick={() => setReceipt(receiptFromPayment(p, p.txId ? txById.get(p.txId) : undefined, patientById.get(p.patientId)))}
+                >Receipt</button></td></tr>
             ))}
             {shownPayments.length === 0 && (
-              <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: '22px 14px' }}>
+              <tr><td colSpan={9} className="muted" style={{ textAlign: 'center', padding: '22px 14px' }}>
                 {payQ.trim() ? <>No payment matches <b>{payQ}</b>.</> : 'No payments recorded yet.'}
               </td></tr>
             )}
@@ -168,16 +188,19 @@ export default function Accounting() {
             hint={<>Every balance change for one patient — search their <b>name</b> or <b>KBC-… ID</b></>}
           />
           <div className="tbl-wrap"><table className="tbl">
-            <thead><tr><th>TX</th><th>Patient</th><th>Date/Time</th><th>Type</th><th>Amount</th><th>Reason</th><th>Staff</th><th>Method</th><th>Balance After</th></tr></thead>
+            <thead><tr><th>TX</th><th>Patient</th><th>Date/Time</th><th>Type</th><th>Amount</th><th>Reason</th><th>Staff</th><th>Method</th><th>Balance After</th><th></th></tr></thead>
             <tbody>{shownTxs.map((t) => (
               <tr key={t.id}><td>{t.id}</td>
-                <td>{nameOf(t.patientId) || '—'}<div className="muted">{t.patientId}</div></td><td>{t.at}</td>
+                <td>{nameOf(t.patientId) || t.patientName || '—'}<div className="muted">{t.patientId}</div></td><td>{t.at}</td>
                 <td><Badge tone={t.type === 'Credit' ? 'green' : 'blue'}>{t.type}</Badge></td>
                 <td className="money">{t.type === 'Credit' ? '+' : '−'}{naira(t.amount)}</td>
-                <td>{t.reason}</td><td>{t.staff}</td><td>{t.method}</td><td className="money">{naira(t.balanceAfter)}</td></tr>
+                <td>{t.reason}</td><td>{t.staff}{t.staffRole ? <div className="muted">{t.staffRole}</div> : null}</td><td>{t.method}</td><td className="money">{naira(t.balanceAfter)}</td>
+                <td className="right"><button className="btn ghost sm"
+                  onClick={() => setReceipt(receiptFromTx(t, patientById.get(t.patientId)))}
+                >Receipt</button></td></tr>
             ))}
             {shownTxs.length === 0 && (
-              <tr><td colSpan={9} className="muted" style={{ textAlign: 'center', padding: '22px 14px' }}>
+              <tr><td colSpan={10} className="muted" style={{ textAlign: 'center', padding: '22px 14px' }}>
                 {txQ.trim() ? <>No transaction matches <b>{txQ}</b>.</> : 'No wallet transactions yet.'}
               </td></tr>
             )}
@@ -189,7 +212,11 @@ export default function Accounting() {
       {fund && (
         <Modal title={`Fund Wallet — ${fund.firstName} ${fund.surname} (${fund.id})`} onClose={() => setFund(null)}
           footer={<><button className="btn ghost" onClick={() => setFund(null)}>Cancel</button><button className="btn green" disabled={busy} onClick={doFund}>{busy ? 'Saving…' : 'Fund Wallet'}</button></>}>
-          {err && <div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{err}</div>}
+          {err && (
+            <AlertCard tone="red" title={isTopUpError(err) ? 'Top up the patient’s wallet' : 'Funding failed'}>
+              {err}
+            </AlertCard>
+          )}
           <div className="form-grid">
             <Field label="Amount (₦)"><input className="input" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>
             <Field label="Payment Method"><select className="input" value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}><option>Transfer</option><option>Cash</option><option>POS</option></select></Field>
@@ -198,6 +225,8 @@ export default function Accounting() {
           <div className="kv"><div className="k">Current balance</div><div className="v money">{naira(fund.wallet)}</div></div>
         </Modal>
       )}
+
+      {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
 }
