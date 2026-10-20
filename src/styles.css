@@ -112,6 +112,31 @@ a { color: var(--blue-700); text-decoration: none; }
 .badge.gray { background: #eef2f7; color: var(--muted); }
 
 .tbl-wrap { overflow-x: auto; }
+/* Prescription table: let the searchable drug dropdown float above later rows. */
+.tbl-wrap.rx-wrap { overflow: visible; }
+@media (max-width: 900px) {
+  /* Small screens still need sideways scrolling for the 9-column table. */
+  .tbl-wrap.rx-wrap { overflow-x: auto; }
+}
+/* ---------- Searchable combo dropdown (Consultation drug picker) ---------- */
+.combo { position: relative; min-width: 220px; }
+.combo-input { padding-right: 52px !important; cursor: text; }
+.combo-chev {
+  position: absolute; right: 28px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-size: 13px; pointer-events: none;
+}
+.combo .ps-clear { right: 7px; }
+.combo-menu {
+  position: absolute; top: 100%; left: 0; min-width: 300px; width: max-content; max-width: 340px;
+  z-index: 55; margin-top: 6px;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(16,42,67,0.15); max-height: 300px; overflow-y: auto;
+}
+.combo-menu .ps-item { gap: 8px; flex-wrap: wrap; }
+.combo-menu .ps-item .i { flex-basis: 100%; }
+.combo-menu .ps-item .w { margin-left: auto; }
+.ps-item.disabled { opacity: 0.5; cursor: not-allowed; }
+.ps-item.disabled:hover { background: none; }
 table.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .tbl th { text-align: left; padding: 10px 14px; background: #f8fafc; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .tbl td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }

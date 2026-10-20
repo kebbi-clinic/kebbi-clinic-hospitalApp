@@ -6,6 +6,7 @@ import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Rec
 import { api, useFetch } from '../api'
 import { paths, patientApi, visitApi } from '../endpoints'
 import { PatientPicker } from '../components/PatientSearch'
+import { DrugPicker } from '../components/DrugPicker'
 import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Settings, type TestItem, type Visit } from '../data'
 
 /* One prescription line being drafted: drug, dose strength, route, frequency,
@@ -194,14 +195,12 @@ export default function Consultation() {
             </Card>
           </div>
           <Card title="Prescription" className="mt" actions={<span className="muted">Drug · Dose · Route · Frequency · Duration · Qty — prices from pharmacy inventory</span>}>
-            <div className="tbl-wrap"><table className="tbl">
+            <div className="tbl-wrap rx-wrap"><table className="tbl">
               <thead><tr><th>Drug</th><th>Dose</th><th>Route</th><th>Frequency</th><th>Duration (days)</th><th>Qty</th><th>Unit Price</th><th>Total</th><th></th></tr></thead>
               <tbody>
                 {rows.map((r, idx) => (
                   <tr key={idx}>
-                    <td><select className="input" style={{ width: 220 }} value={r.drugId} onChange={(e) => setRows(rows.map((x, i) => i === idx ? { ...x, drugId: e.target.value } : x))}>
-                      <option value="">Select drug…</option>{drugs.map((d) => <option key={d.id} value={d.id} disabled={d.stock === 0}>{d.name} (stock {d.stock})</option>)}
-                    </select></td>
+                    <td><div style={{ minWidth: 220 }}><DrugPicker drugs={drugs} value={r.drugId} onChange={(id) => setRows(rows.map((x, i) => i === idx ? { ...x, drugId: id } : x))} /></div></td>
                     <td><input className="input" style={{ width: 92 }} placeholder="80mg" value={r.dose} maxLength={40} onChange={(e) => setRows(rows.map((x, i) => i === idx ? { ...x, dose: e.target.value.replace(/[^a-zA-Z0-9 .%/µ-]/g, '') } : x))} /></td>
                     <td><select className="input" style={{ width: 96 }} value={r.route} onChange={(e) => setRows(rows.map((x, i) => i === idx ? { ...x, route: e.target.value } : x))}>
                       {routes.map((o) => <option key={o}>{o}</option>)}
