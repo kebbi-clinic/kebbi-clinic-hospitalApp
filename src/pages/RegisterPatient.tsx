@@ -6,6 +6,8 @@ import { api } from '../api'
 import { patientApi } from '../endpoints'
 import type { Patient } from '../data'
 
+export const BLOOD_GROUPS = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
+
 export default function RegisterPatient() {
   const nav = useNavigate()
   const [created, setCreated] = useState<Patient | null>(null)
@@ -56,6 +58,7 @@ export default function RegisterPatient() {
               <Field label="Age (auto from DOB)"><input className="input" placeholder="Auto" disabled value={f.dob ? `${new Date().getFullYear() - Number(f.dob.slice(0, 4))} years` : ''} /></Field>
               <Field label="Phone Number"><input className="input" required value={f.phone || ''} onChange={set('phone')} placeholder="080..." /></Field>
               <Field label="Address"><input className="input" required value={f.address || ''} onChange={set('address')} placeholder="Street, town" /></Field>
+              <Field label="Blood Group"><select className="input" value={f.bloodGroup || ''} onChange={set('bloodGroup')}><option value="">Select… (optional)</option>{BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}</select></Field>
             </div>
           </Card>
           <Card title="Next of Kin">

@@ -61,6 +61,7 @@ export const authApi = {
 /* ---------- PATIENTS ---------- */
 export const patientApi = {
   register: (body: Record<string, unknown>) => api.post(paths.patients, body),
+  update: (patientId: string, body: Record<string, unknown>) => api.put<Patient>(`/api/patients/${patientId}`, body),
   /** Server-side search: finds one patient out of tens of thousands without
       downloading the whole register. Returns `{ items, total, page, limit }`. */
   search: (q: string, opts?: { status?: 'Active' | 'Inactive'; page?: number; limit?: number }) => {

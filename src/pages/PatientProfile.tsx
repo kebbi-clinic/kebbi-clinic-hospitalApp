@@ -8,30 +8,26 @@ import { useFetch, fileUrl } from '../api'
 import { paths, patientApi } from '../endpoints'
 import { whenMs, type Patient, type Payment, type WalletTx } from '../data'
 
+const BLOOD_GROUPS = ['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-']
+
 const TABS = ['Overview', 'Visits', 'Medical History', 'Investigations', 'Prescriptions', 'Procedures', 'Pharmacy', 'Payments', 'Wallet', 'Activity']
 type Any = Record<string, any>
 
-export default function PatientProfile() {
-  const { id } = useParams()
+function ProfileBody({ b, refetch }: { b: Any; refetch: () => void }) {
   const { user } = useAuth()
-  const { data: b, error, loading, refetch } = useFetch<Any>(paths.patient(id || ''))
   const [tab, setTab] = useState('Overview')
   const [err, setErr] = useState('')
   const [note, setNote] = useState('')
-  /* Every hook must run before the early returns below, in the same order on
-     every render — otherwise React throws "Rendered more hooks than during the
-     previous render". */
   const [busy, setBusy] = useState(false)
   /* Receipt for the last charge / the row whose Receipt button was hit. */
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
-
-  if (loading || !b) return <Layout title="Patient Profile"><div className="muted">Loading…</div></Layout>
-  if (error) return <Layout title="Patient Profile"><div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{error} — <Link to="/patients">← Back to patients</Link></div></Layout>
+  /* Blood-group correction (Records). */
+  const [editingBg, setEditingBg] = useState(false)
+  const [bgVal, setBgVal] = useState('')
   /* Backend getBasic() returns a FLAT object ({...patient, visits, ...});
      older get360() returned { patient, visits, ... }. Accept both. */
   const p: Patient = (b.patient || b) as Patient
-  if (!p || !p.id) return <Layout title="Patient Profile"><div className="muted">Patient not found. <Link to="/patients">← Back to patients</Link></div></Layout>
   const visits: Any[] = b.visits || []
   const vitals: Any[] = b.vitals || []
   const investigations: Any[] = b.investigations || []
@@ -153,6 +149,16 @@ export default function PatientProfile() {
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
+  /* Records correction of the blood group — PUT /api/patients/:id. */
+  const saveBloodGroup = async () => {
+    setBusy(true); setErr('')
+    try {
+      await patientApi.update(p.id, { bloodGroup: bgVal })
+      setEditingBg(false); setErr(''); setNote(`Blood group saved as ${bgVal || '—'}.`)
+      refetch()
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+
   return (
     <Layout title="Patient Profile">
       <Card className="mb">
@@ -165,7 +171,23 @@ export default function PatientProfile() {
           <div className="kv" style={{ gridTemplateColumns: 'auto auto', gap: '4px 26px' }}>
             <div className="k">Age / Gender</div><div className="v">{age} · {p.gender}</div>
             <div className="k">Phone</div><div className="v">{p.phone}</div>
-            <div className="k">Blood Group</div><div className="v">{p.bloodGroup || '—'}</div>
+            <div className="k">Blood Group</div><div className="v">
+              {editingBg ? (
+                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                  <select className="input" style={{ width: 110 }} value={bgVal} onChange={(e) => setBgVal(e.target.value)}>
+                    <option value="">—</option>
+                    {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                  <button className="btn green sm" disabled={busy} onClick={saveBloodGroup}>{busy ? 'Saving…' : 'Save'}</button>
+                  <button className="btn ghost sm" onClick={() => setEditingBg(false)}>Cancel</button>
+                </span>
+              ) : (
+                <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                  {p.bloodGroup || '—'}
+                  {isRecords && <button className="btn ghost sm" onClick={() => { setBgVal(p.bloodGroup || ''); setEditingBg(true) }}>{p.bloodGroup ? 'Edit' : 'Add'}</button>}
+                </span>
+              )}
+            </div>
             <div className="k">Wallet Balance</div><div className="v money">{naira(p.wallet || 0)}</div>
           </div>
           {isRecords && (
@@ -367,5 +389,16 @@ export default function PatientProfile() {
       {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
+}
+
+export default function PatientProfile() {
+  const { id } = useParams()
+  const { data: b, error, loading, refetch } = useFetch<Any>(paths.patient(id || ''))
+
+  if (loading || !b) return <Layout title="Patient Profile"><div className="muted">Loading…</div></Layout>
+  if (error) return <Layout title="Patient Profile"><div className="demo-note" style={{ background: 'var(--red-100)', color: 'var(--red-600)' }}>{error} — <Link to="/patients">← Back to patients</Link></div></Layout>
+  const p: Patient = (b.patient || b) as Patient
+  if (!p || !p.id) return <Layout title="Patient Profile"><div className="muted">Patient not found. <Link to="/patients">← Back to patients</Link></div></Layout>
+  return <ProfileBody b={b} refetch={refetch} />
 }
 
