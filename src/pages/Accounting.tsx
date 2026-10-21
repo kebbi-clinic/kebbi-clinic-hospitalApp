@@ -111,7 +111,7 @@ export default function Accounting() {
         </AlertCard>
       )}
       <div className="grid cols-4 mb">
-        <StatCard icon="money" value={naira(paid.reduce((s, p) => s + p.amount, 0))} label="Revenue (paid)" tone="green" />
+        <StatCard icon="money" value={naira(funding)} label="Revenue (wallet credits)" tone="green" />
         <StatCard icon="wallet" value={naira(funding)} label="Wallet Funding" tone="blue" />
         <StatCard icon="clock" value={payments.filter((p) => p.status === 'Pending').length} label="Pending Payments" tone="amber" />
         <StatCard icon="check" value={paid.length} label="Completed Payments" />

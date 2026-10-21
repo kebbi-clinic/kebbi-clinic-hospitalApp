@@ -6,6 +6,7 @@ import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Rec
 import { useFetch } from '../api'
 import { paths, serviceApi } from '../endpoints'
 import { PatientPicker } from '../components/PatientSearch'
+import { ServicePicker } from '../components/ServicePicker'
 import type { Patient, Service } from '../data'
 
 /**
@@ -125,10 +126,7 @@ export default function Services() {
             </Field>
 
             <Field label="Procedure / Service" full>
-              <select className="input" value={serviceId} onChange={(e) => { setServiceId(e.target.value); setErr('') }}>
-                <option value="">Select procedure or service…</option>
-                {services.map((s) => <option key={s.id} value={s.id}>{s.name} — {naira(s.amount)}</option>)}
-              </select>
+              <ServicePicker services={services} value={serviceId} onChange={(id) => { setServiceId(id); setErr('') }} />
             </Field>
 
             <Field label="Quantity">
