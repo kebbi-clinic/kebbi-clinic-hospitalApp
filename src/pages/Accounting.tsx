@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Layout } from '../components/Layout'
 import { Card, PageHead, Tabs, Badge, StatCard, Modal, Field, naira, AlertCard, isTopUpError } from '../components/ui'
 import { ReceiptModal, receiptFromTx, receiptFromPayment, receiptFromOTC, type ReceiptData } from '../components/Receipt'
@@ -127,6 +127,15 @@ export default function Accounting() {
       refetchOtc()
     } catch (e) { setOtcErr((e as Error).message) } finally { setPayBusy(false) }
   }
+
+  /* Re-fetch OTC sales whenever the accountant opens the OTC Sales tab to
+   * search by a customer's reference id. The list is fetched once on mount
+   * and refetchOtc() is otherwise only called after marking a sale Paid, so
+   * a sale the pharmacist just rang up is missing from the list until a
+   * reload — meaning a search by reference id would turn up nothing. */
+  useEffect(() => {
+    if (tab === 'OTC Sales') refetchOtc()
+  }, [tab])
 
   return (
     <Layout title="Payments & Wallets">
