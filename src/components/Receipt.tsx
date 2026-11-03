@@ -78,6 +78,26 @@ export function receiptFromPayment(p: Payment, tx?: WalletTx | null, patient?: P
   }
 }
 
+/* Receipt for an over-the-counter cash sale to a non-patient: no patient
+ * record, no wallet — just the sale reference, the amount paid and the
+ * accountant who marked it Paid. */
+export function receiptFromOTC(sale: { id: string; customerName: string; customerPhone?: string; total: number; paymentMethod?: string; paidAt?: string; paidBy?: string; paidByRole?: string; createdAt: string }, payment?: Payment | null): ReceiptData {
+  return {
+    no: sale.id,
+    patientId: undefined,
+    patientName: sale.customerName,
+    patientSex: '',
+    date: sale.paidAt || sale.createdAt,
+    amount: Number(sale.total) || 0,
+    direction: 'Credit',
+    reason: `Over-the-counter drug sale${sale.customerPhone ? ` — ${sale.customerPhone}` : ''}`,
+    method: payment?.method || sale.paymentMethod,
+    balanceAfter: null,
+    staff: payment?.staff || sale.paidBy || '—',
+    staffRole: payment?.staffRole || sale.paidByRole || '',
+  }
+}
+
 interface HospitalInfo { name?: string; address?: string; phone?: string }
 
 /* The receipt body: one HTML string used for the on-screen preview, the

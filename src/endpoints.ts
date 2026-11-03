@@ -6,7 +6,7 @@
  * Mirror of backend/src/routes — keep the two in sync.
  * ========================================================================== */
 import { api, type User } from './api'
-import type { Patient, Payment, WalletTx } from './data'
+import type { Patient, Payment, WalletTx, OTCSale } from './data'
 
 /* ---------- READ PATHS (GET) ---------- */
 export const paths = {
@@ -47,6 +47,8 @@ export const paths = {
   walletTxs: '/api/wallettxs',
   /** GET /api/notifications — role-targeted, live */
   notifications: '/api/notifications',
+  /** GET /api/otc/sales — over-the-counter drug sales (pharmacy cash sales) */
+  otcSales: '/api/otc/sales',
 }
 
 /* ---------- AUTH ---------- */
@@ -198,6 +200,21 @@ export const prescriptionApi = {
 export const drugApi = {
   create: (body: Record<string, unknown>) => api.post(paths.drugs, body),
   update: (drugId: string, body: Record<string, unknown>) => api.put(`/api/drugs/${drugId}`, body),
+}
+
+/* ---------- OVER-THE-COUNTER (CASH) DRUG SALES TO NON-PATIENTS ---------- */
+/* The pharmacist rings up a walk-in customer's sale as "Pending" — no patient
+ * record is needed and the customer receives the sale id to pay the
+ * accountant. The accountant marks it "Paid" with a payment method; only then
+ * is stock deducted and the receipt released. */
+export const otcApi = {
+  create: (body: { customerName: string; customerPhone?: string; items: { drugId: string; qty: number }[] }) =>
+    api.post<OTCSale>(`/api/otc/sales`, body),
+  list: () => api.get<OTCSale[]>(`/api/otc/sales`),
+  get: (saleId: string) => api.get<OTCSale>(`/api/otc/sales/${saleId}`),
+  /** Accountant marks a Pending sale Paid, choosing the payment method. */
+  pay: (saleId: string, body: { paymentMethod: string }) =>
+    api.post<{ sale: OTCSale; payment: Payment }>(`/api/otc/sales/${saleId}/pay`, body),
 }
 
 /* ---------- LAB & RADIOLOGY INVENTORY (test catalogue + prices) ---------- */

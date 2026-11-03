@@ -4,10 +4,11 @@ import { Layout } from '../components/Layout'
 import { Card, PageHead, Field, Badge, naira, AlertCard, isTopUpError } from '../components/ui'
 import { ReceiptModal, receiptFromTx, type ReceiptData } from '../components/Receipt'
 import { api, useFetch } from '../api'
+import { useAuth } from '../auth'
 import { paths, patientApi, visitApi } from '../endpoints'
 import { PatientPicker } from '../components/PatientSearch'
 import { DrugPicker } from '../components/DrugPicker'
-import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Settings, type TestItem, type Visit } from '../data'
+import { RX_ROUTES, RX_FREQUENCIES, type Drug, type Role, type Settings, type TestItem, type Visit } from '../data'
 
 /* One prescription line being drafted: drug, dose strength, route, frequency,
    duration (days) + quantity. */
@@ -33,9 +34,15 @@ export default function Consultation() {
   const labOptions: TestItem[] = catalogue.filter((t) => t.dept !== 'Radiology' && t.active !== false)
   const radOptions: TestItem[] = catalogue.filter((t) => t.dept === 'Radiology' && t.active !== false)
 
+  const { user } = useAuth()
+  /* Defensive: if the render somehow runs without a session, fall back to a
+   * role that can't start visits instead of dereferencing `user.role`. */
+  const role = (user?.role || '') as Role
+  const canStartVisit = role === 'Doctor' || role === 'Records Officer'
   const [patientId, setPatientId] = useState(params.get('patient') || '')
   const [visitId, setVisitId] = useState(params.get('visit') || '')
-  const { data: bundle } = useFetch<Record<string, any>>(patientId ? paths.patient(patientId) : '', [patientId])
+  const { data: bundle, refetch: refetchPatient } = useFetch<Record<string, any>>(patientId ? paths.patient(patientId) : '', [patientId])
+  const [startVisitBusy, setStartVisitBusy] = useState(false)
   const patient = bundle?.patient || (bundle?.id ? bundle : undefined)
   /* A visit is selectable while it is still open. The API creates visits as
      "Open" and nursing flips them to "Waiting" once vitals are in — filtering on
@@ -93,6 +100,23 @@ export default function Consultation() {
   const toggle = (arr: string[], setArr: (v: string[]) => void, t: string) =>
     setArr(arr.includes(t) ? arr.filter((x) => x !== t) : [...arr, t])
 
+  /* Open a brand-new consultation episode (a fresh "Open" visit) for this
+   * patient so the doctor can run a complete, separate consultation with its
+   * own investigations and prescription. Without this, re-saving an already
+   * completed visit is treated as a revisit and the labs/meds are dropped. */
+  const startNewVisit = async () => {
+    if (!patientId) { setErr('Select a patient first.'); return }
+    setStartVisitBusy(true); setErr('')
+    try {
+      const visit = await patientApi.startVisit(patientId)
+      const newVisitId = (visit as any)?.id || (visit as any)?._id
+      if (!newVisitId) throw new Error('Visit was created but no id was returned.')
+      setVisitId(newVisitId)
+      await refetchPatient()
+      setOk(`New visit ${newVisitId} started — save the consultation to log this episode.`)
+    } catch (e) { setErr((e as Error).message) } finally { setStartVisitBusy(false) }
+  }
+
   const save = async () => {
     if (!patientId || !visitId) { setErr('Select a patient and an active visit first.'); return }
     setBusy(true); setErr(''); setOk('')
@@ -136,6 +160,11 @@ export default function Consultation() {
       {!patientId && <Card><div className="muted" style={{ padding: 16 }}>Select a patient above, or open one from the dashboard's "Consult" button.</div></Card>}
       {patient && (
         <>
+          {canStartVisit && (
+            <button className="btn primary mb" disabled={startVisitBusy || busy} onClick={startNewVisit}>
+              {startVisitBusy ? 'Starting new visit…' : 'Start New Visit'}
+            </button>
+          )}
           {visitOptions.length === 0 && <div className="demo-note mb">No visit for this patient yet. Ask the Records Officer to start a new visit first.</div>}
           {visitOptions.length > 0 && (
             <div className="field" style={{ maxWidth: 340 }}>

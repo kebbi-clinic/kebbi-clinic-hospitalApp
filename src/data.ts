@@ -81,6 +81,19 @@ export interface Procedure {
 
 export interface Drug { id: string; name: string; category: string; unit: string; stock: number; minStock: number; price: number; expiry: string }
 
+/* ---------- Over-the-counter (cash) drug sale to a non-patient ---------- */
+/* The pharmacist rings up the sale as "Pending" and hands the customer the
+ * sale id (e.g. OTC-000001). The accountant marks it "Paid" with a payment
+ * method — only then is stock deducted and the receipt released. */
+export interface OTCItem { drugId: string; drug: string; qty: number; price: number }
+export interface OTCSale {
+  id: string; customerName: string; customerPhone?: string;
+  items: OTCItem[]; total: number;
+  status: 'Pending' | 'Paid' | 'Cancelled';
+  paymentMethod?: string; paidAt?: string; paidBy?: string; paidByRole?: string;
+  createdBy: string; createdByRole: string; createdAt: string; paymentId?: string;
+}
+
 /* A laboratory / radiology test in the catalogue ("inventory") — the admin
  * maintains these with their prices, e.g. PCV = ₦2,000. */
 export interface TestItem {

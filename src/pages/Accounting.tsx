@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Layout } from '../components/Layout'
 import { Card, PageHead, Tabs, Badge, StatCard, Modal, Field, naira, AlertCard, isTopUpError } from '../components/ui'
-import { ReceiptModal, receiptFromTx, receiptFromPayment, type ReceiptData } from '../components/Receipt'
+import { ReceiptModal, receiptFromTx, receiptFromPayment, receiptFromOTC, type ReceiptData } from '../components/Receipt'
 import { useFetch } from '../api'
-import { paths, walletApi } from '../endpoints'
+import { paths, walletApi, otcApi } from '../endpoints'
 import { PatientSearch, SearchBox, filterPatients, matchesFields } from '../components/PatientSearch'
-import type { Patient, Payment, WalletTx } from '../data'
+import type { Patient, Payment, WalletTx, OTCSale } from '../data'
 
 /** Coerce any unknown payload into a real array so `.map`/`.filter` never crash
  *  the error boundary. Handles bare arrays and common wrappers. */
@@ -35,14 +35,30 @@ export default function Accounting() {
      transaction's receipt reachable from the success card after it is closed. */
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null)
+  /* OTC (walk-in) cash sales: the accountant lists pending sales and marks
+   * them Paid with a payment method, releasing the drugs and the receipt. */
+  const [otcQ, setOtcQ] = useState('')
+  const [otcErr, setOtcErr] = useState('')
+  const [otcOk, setOtcOk] = useState('')
+  const [paySale, setPaySale] = useState<OTCSale | null>(null)
+  const [payMethod, setPayMethod] = useState('Cash')
+  const [payBusy, setPayBusy] = useState(false)
 
   const { data: paymentsRaw } = useFetch<unknown>(paths.payments)
   const { data: txsRaw } = useFetch<unknown>(paths.walletTxs)
   const { data: patientsRaw, refetch } = useFetch<unknown>(paths.patients)
+  const { data: otcRaw, refetch: refetchOtc } = useFetch<OTCSale[]>(paths.otcSales)
 
   const payments = useMemo(() => asArray<Payment>(paymentsRaw), [paymentsRaw])
   const txs = useMemo(() => asArray<WalletTx>(txsRaw), [txsRaw])
   const patients = useMemo(() => asArray<Patient>(patientsRaw), [patientsRaw])
+  const otcSales = useMemo(() => asArray<OTCSale>(otcRaw), [otcRaw])
+  const shownOtc = useMemo(() => otcSales.filter((s) => {
+    const q = otcQ.trim().toLowerCase()
+    if (!q) return true
+    return [s.id, s.customerName, s.customerPhone, s.status, s.paymentMethod, s.createdBy]
+      .some((v) => String(v || '').toLowerCase().includes(q))
+  }), [otcSales, otcQ])
 
   const paid = payments.filter((p) => p.status === 'Paid')
   const funding = paid.filter((p) => p.service === 'Wallet funding').reduce((s, p) => s + p.amount, 0)
@@ -101,6 +117,17 @@ export default function Accounting() {
     } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
   }
 
+  const payOTC = async () => {
+    if (!paySale) return
+    setPayBusy(true); setOtcErr('')
+    try {
+      await otcApi.pay(paySale.id, { paymentMethod: payMethod })
+      setOtcOk(`Sale ${paySale.id} marked Paid — ₦${paySale.total.toLocaleString()} received via ${payMethod}. Drugs and receipt released.`)
+      setPaySale(null)
+      refetchOtc()
+    } catch (e) { setOtcErr((e as Error).message) } finally { setPayBusy(false) }
+  }
+
   return (
     <Layout title="Payments & Wallets">
       <PageHead title="Payments & Wallets" sub="Every balance change must create a transaction record — balances are never edited directly." />
@@ -116,7 +143,7 @@ export default function Accounting() {
         <StatCard icon="clock" value={payments.filter((p) => p.status === 'Pending').length} label="Pending Payments" tone="amber" />
         <StatCard icon="check" value={paid.length} label="Completed Payments" />
       </div>
-      <Tabs tabs={['Payments', 'Patient Wallets', 'Transactions']} active={tab} onChange={setTab} />
+      <Tabs tabs={['Payments', 'Patient Wallets', 'Transactions', 'OTC Sales']} active={tab} onChange={setTab} />
 
       {tab === 'Payments' && (
         <Card title="Payments">
@@ -209,6 +236,47 @@ export default function Accounting() {
         </Card>
       )}
 
+      {tab === 'OTC Sales' && (
+        <Card title="Over-the-Counter Sales (Walk-in Customers)">
+          <div className="muted mb">Cash sales to non-registered patients. A sale starts <b>Pending</b> — the customer pays you here, you choose the payment method and mark it <b>Paid</b>, which deducts stock, releases the drugs and prints the receipt.</div>
+          <SearchBox<OTCSale>
+            items={otcSales}
+            value={otcQ}
+            onChange={setOtcQ}
+            noun="sale"
+            fieldsOf={(s) => [s.id, s.customerName, s.customerPhone || '', s.status, s.paymentMethod || '', s.createdBy]}
+            keyOf={(s) => s.id}
+            placeholder="Search by sale reference, customer or status…"
+            hint={<>Each sale has a reference id (e.g. OTC-000001) — give it to the customer so they can pay you.</>}
+          />
+          <div className="tbl-wrap"><table className="tbl">
+            <thead><tr><th>Reference</th><th>Customer</th><th>Phone</th><th>Total</th><th>Status</th><th>Method</th><th>Created by</th><th></th></tr></thead>
+            <tbody>{shownOtc.map((s) => (
+              <tr key={s.id}>
+                <td>{s.id}</td><td>{s.customerName}</td><td className="muted">{s.customerPhone || '—'}</td>
+                <td className="money">{naira(s.total)}</td>
+                <td><Badge tone={s.status === 'Paid' ? 'green' : s.status === 'Pending' ? 'blue' : 'red'}>{s.status}</Badge></td>
+                <td>{s.paymentMethod || '—'}</td>
+                <td>{s.createdBy}</td>
+                <td className="right">
+                  {s.status === 'Pending' && (
+                    <button className="btn green sm" onClick={() => { setPaySale(s); setPayMethod('Cash'); setOtcErr(''); }}>Mark Paid</button>
+                  )}
+                  {s.status === 'Paid' && <button className="btn ghost sm" onClick={() => {
+                    const rc = receiptFromOTC(s, { id: s.paymentId || '', ref: '', patientId: s.id, patientName: s.customerName, patientSex: '', amount: s.total, method: s.paymentMethod || '', service: 'Over-the-counter drug sale', staff: s.paidBy || '—', staffRole: s.paidByRole || '', at: s.paidAt || s.createdAt, status: 'Paid' })
+                    setReceipt(rc)
+                  }}>Receipt</button>}
+                </td>
+              </tr>
+            ))}
+            {shownOtc.length === 0 && (
+              <tr><td colSpan={8} className="muted" style={{ textAlign: 'center', padding: '22px 14px' }}>
+                {otcQ.trim() ? <>No sale matches <b>{otcQ}</b>.</> : 'No over-the-counter sales yet.'}
+              </td></tr>
+            )}
+          </tbody></table></div>
+        </Card>
+      )}
       {fund && (
         <Modal title={`Fund Wallet — ${fund.firstName} ${fund.surname} (${fund.id})`} onClose={() => setFund(null)}
           footer={<><button className="btn ghost" onClick={() => setFund(null)}>Cancel</button><button className="btn green" disabled={busy} onClick={doFund}>{busy ? 'Saving…' : 'Fund Wallet'}</button></>}>
@@ -226,6 +294,26 @@ export default function Accounting() {
         </Modal>
       )}
 
+      {paySale && (
+        <Modal title={`Mark Paid — ${paySale.id}`} onClose={() => setPaySale(null)}
+          footer={<><button className="btn ghost" onClick={() => setPaySale(null)}>Cancel</button><button className="btn green" disabled={payBusy} onClick={payOTC}>{payBusy ? 'Marking Paid…' : 'Mark Paid'}</button></>}>
+          {otcErr && <AlertCard tone="red">{otcErr}</AlertCard>}
+          {otcOk && <AlertCard tone="green">{otcOk}</AlertCard>}
+          <div className="kv">
+            <div className="k">Reference</div><div className="v">{paySale.id}</div>
+            <div className="k">Customer</div><div className="v">{paySale.customerName}</div>
+            <div className="k">Phone</div><div className="v">{paySale.customerPhone || '—'}</div>
+            <div className="k">Total</div><div className="v money">{naira(paySale.total)}</div>
+            <div className="k">Items</div><div className="v">{paySale.items.map((i) => `${i.drug} ×${i.qty}`).join(', ')}</div>
+          </div>
+          <div className="field"><label>Payment Method</label>
+            <select className="input" value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+              <option>Cash</option><option>Transfer</option><option>POS</option>
+            </select>
+          </div>
+          <div className="muted mt">Marking Paid records the customer's payment, deducts stock and releases the receipt — only then can the customer collect the drugs.</div>
+        </Modal>
+      )}
       {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
     </Layout>
   )
