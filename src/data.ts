@@ -13,7 +13,7 @@ export interface Patient {
   procedures?: Procedure[]
 }
 
-export interface Consultation { complaint: string; history: string; exam: string; diagnosis: string; doctor: string; at: string }
+export interface Consultation { complaint: string; history: string; exam: string; plan: string; diagnosis: string; doctor: string; at: string }
 
 export interface Visit { id: string; patientId: string; date: string; createdAt: string; type: 'Outpatient' | 'Admission'; status: string; diagnosis?: string; consultation?: Consultation }
 
