@@ -191,8 +191,9 @@ export default function Consultation() {
               <Field label="Presenting Complaint"><textarea className="input" rows={2} value={form.complaint} onChange={(e) => setForm({ ...form, complaint: e.target.value })} /></Field>
               <Field label="History of Presenting Complaint"><textarea className="input" rows={3} value={form.history} onChange={(e) => setForm({ ...form, history: e.target.value })} /></Field>
               <Field label="Examination Findings"><textarea className="input" rows={3} value={form.exam} onChange={(e) => setForm({ ...form, exam: e.target.value })} /></Field>
-              <Field label="Plan"><textarea className="input" rows={3} placeholder="Plan..." value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })} /></Field>
               <Field label="Diagnosis"><input className="input" value={form.diagnosis} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} /></Field>
+              <Field label="Plan"><textarea className="input" rows={3} placeholder="Plan..." value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })} /></Field>
+
             </Card>
             <Card title="Investigations Requested" actions={<span className="muted">Prices come from the lab & radiology catalogue — billed from the wallet on result upload</span>}>
               <div className="muted mb" style={{ fontWeight: 700 }}>Laboratory</div>
