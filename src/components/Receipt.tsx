@@ -18,6 +18,9 @@ import type { Payment, WalletTx } from '../data'
 
 export interface ReceiptData {
   no: string
+  /** `registration` renders the patient registration receipt (no charge,
+   *  generatable anytime for the KBC-… id); anything else is a transaction. */
+  kind?: 'payment' | 'registration'
   patientId?: string
   patientName: string
   patientSex: string
@@ -29,6 +32,15 @@ export interface ReceiptData {
   balanceAfter?: number | null
   staff: string
   staffRole: string
+  /* Registration-only fields. */
+  phone?: string
+  address?: string
+  dob?: string
+  bloodGroup?: string
+  registered?: string
+  status?: string
+  wallet?: number
+  nextOfKin?: string
 }
 
 type PatientLike = { firstName?: string; surname?: string; gender?: string } | null | undefined
@@ -98,11 +110,45 @@ export function receiptFromOTC(sale: { id: string; customerName: string; custome
   }
 }
 
+/* Registration receipt for a patient (KBC-… id): no payment or wallet row is
+ *  needed — it only reads the register, so it can be re-generated anytime. */
+export function receiptFromRegistration(
+  p: { id: string; firstName?: string; otherName?: string; surname?: string; gender?: string; phone?: string; address?: string; dob?: string; bloodGroup?: string; status?: string; wallet?: number; registered?: string; registeredAt?: string; nextOfKin?: { name?: string; relationship?: string } } | null | undefined,
+  staff: string, staffRole: string,
+): ReceiptData {
+  const name = `${p?.firstName || ''} ${p?.otherName || ''} ${p?.surname || ''}`.trim() || '—'
+  const kin = p?.nextOfKin?.name
+    ? `${p.nextOfKin.name}${p.nextOfKin.relationship ? ` (${p.nextOfKin.relationship})` : ''}`
+    : '—'
+  return {
+    no: p?.id || '—',
+    kind: 'registration',
+    patientId: p?.id,
+    patientName: name,
+    patientSex: p?.gender || '—',
+    phone: p?.phone || '',
+    address: p?.address || '',
+    dob: p?.dob || '',
+    bloodGroup: p?.bloodGroup || '',
+    registered: p?.registered || p?.registeredAt || '',
+    date: p?.registeredAt || p?.registered || '',
+    status: p?.status || '—',
+    wallet: Number(p?.wallet || 0),
+    nextOfKin: kin,
+    amount: 0,
+    direction: 'Credit',
+    reason: 'Patient registration',
+    staff,
+    staffRole,
+  }
+}
+
 interface HospitalInfo { name?: string; address?: string; phone?: string }
 
 /* The receipt body: one HTML string used for the on-screen preview, the
  * download and the print — so what you see is exactly what lands on paper. */
 export function receiptInnerHtml(r: ReceiptData, hospital: HospitalInfo): string {
+  if (r.kind === 'registration') return registrationReceiptHtml(r, hospital)
   const name = hospital.name || 'Kebbi Clinic'
   const sub = [hospital.address, hospital.phone].filter(Boolean).join(' · ')
   const credit = r.direction === 'Credit'
@@ -160,6 +206,76 @@ export function receiptInnerHtml(r: ReceiptData, hospital: HospitalInfo): string
   </div>
   <hr/>
   <div class="rcpt-foot">Keep this receipt — it is the official record of this transaction.<br/>${esc(name)}</div>
+</div>`
+}
+
+/* Registration receipt: patient details only — no payment, no ledger row,
+ *  so it can be re-printed for the same KBC-… id anytime. */
+function registrationReceiptHtml(r: ReceiptData, hospital: HospitalInfo): string {
+  const name = hospital.name || 'Kebbi Clinic'
+  const sub = [hospital.address, hospital.phone].filter(Boolean).join(' · ')
+  const issued = [r.staff, r.staffRole].filter(Boolean).join(' · ') || '—'
+  const rows: [string, string][] = [
+    ['Receipt No', r.no],
+    ['Patient ID', r.patientId || '—'],
+    ['Patient', r.patientName],
+    ['Sex', r.patientSex || '—'],
+  ]
+  if (r.phone) rows.push(['Phone', r.phone])
+  if (r.address) rows.push(['Address', r.address])
+  if (r.dob) rows.push(['Date of Birth', r.dob])
+  if (r.bloodGroup) rows.push(['Blood Group', r.bloodGroup])
+  rows.push(['Registered', r.date || '—'])
+  rows.push(['Status', r.status || '—'])
+  rows.push(['Wallet Balance', naira2(r.wallet ?? 0)])
+  if (r.nextOfKin && r.nextOfKin !== '—') rows.push(['Next of Kin', r.nextOfKin])
+  rows.push(['Issued by', issued])
+  rows.push(['Date issued', new Date().toLocaleString()])
+  return `<style>
+.rcpt{font-family:'Courier New',ui-monospace,monospace;font-size:13px;color:#111;background:#fff;max-width:320px;margin:0 auto;padding:14px;border:1px dashed #9ca3af}
+.rcpt *{box-sizing:border-box}
+.rcpt .rcpt-h{text-align:center}
+.rcpt .rcpt-name{font-size:17px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}
+.rcpt .rcpt-sub{font-size:11px;color:#444;margin-top:2px}
+.rcpt hr{border:none;border-top:1px dashed #9ca3af;margin:8px 0}
+.rcpt .rcpt-row{display:flex;justify-content:space-between;gap:10px;margin:3px 0}
+.rcpt .rcpt-row .rcpt-k{color:#333}
+.rcpt .rcpt-row .rcpt-v{font-weight:700;text-align:right}
+.rcpt .rcpt-dir{text-align:center;font-size:15px;font-weight:800;letter-spacing:.1em;padding:4px 0}
+.rcpt .rcpt-dir.credit{color:#15803d}
+.rcpt .rcpt-dir.debit{color:#b91c1c}
+.rcpt .rcpt-amt{text-align:center;font-size:22px;font-weight:800;margin:4px 0}
+.rcpt .rcpt-amt-label{text-align:center;font-size:11px;color:#444}
+.rcpt .rcpt-reason{text-align:center;font-weight:700;font-size:12.5px;margin-top:2px}
+.rcpt .rcpt-who{text-align:center}
+.rcpt .rcpt-who .rcpt-nm{font-weight:800}
+.rcpt .rcpt-who .rcpt-rl{font-size:11.5px;color:#333}
+.rcpt .rcpt-foot{text-align:center;font-size:10.5px;color:#444;margin-top:6px}
+@media print{
+  .rcpt{max-width:none;width:auto;border:none;padding:0;font-size:11px}
+}
+</style>
+<div class="rcpt">
+  <div class="rcpt-h">
+    <div class="rcpt-name">${esc(name)}</div>
+    ${sub ? `<div class="rcpt-sub">${esc(sub)}</div>` : ''}
+  </div>
+  <div class="rcpt-sub" style="text-align:center;margin-top:2px">— PATIENT REGISTRATION RECEIPT —</div>
+  <hr/>
+  ${rows.map(([k, v]) => `<div class="rcpt-row"><span class="rcpt-k">${esc(k)}</span><span class="rcpt-v">${esc(v)}</span></div>`).join('')}
+  <hr/>
+  <div class="rcpt-dir credit">REGISTRATION</div>
+  <div class="rcpt-amt">₦0.00</div>
+  <div class="rcpt-amt-label">Charge at registration</div>
+  <div class="rcpt-reason">${esc(r.reason)} — no payment required to register</div>
+  <hr/>
+  <div class="rcpt-who">
+    <div class="rcpt-sub">Issued by</div>
+    <div class="rcpt-nm">${esc(r.staff)}</div>
+    ${r.staffRole ? `<div class="rcpt-rl">${esc(r.staffRole)}</div>` : ''}
+  </div>
+  <hr/>
+  <div class="rcpt-foot">This receipt confirms the patient record below exists in the register. It carries no charge and may be re-printed anytime for Patient ID ${esc(r.patientId || '—')}.<br/>${esc(name)}</div>
 </div>`
 }
 

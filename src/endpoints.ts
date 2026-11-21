@@ -23,6 +23,10 @@ export const paths = {
   patientsByStatus: (status: 'Active' | 'Inactive') => `/api/patients?status=${status}`,
   /** GET /api/patients/:id — patient + visits + vitals + investigations + … */
   patient: (id: string) => `/api/patients/${id}`,
+  /** GET /api/patients/:id/receipt — on-demand registration receipt for a
+      patient (KBC-… id). Generatable anytime after registration; read-only,
+      creates no payment or ledger row. */
+  patientReceipt: (id: string) => `/api/patients/${id}/receipt`,
   /** GET /api/admissions */
   admissions: '/api/admissions',
   /** GET /api/investigations?dept=Lab|Radiology */

@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
 import { Card, Badge, statusTone, Tabs, Timeline, naira, AlertCard, isTopUpError } from '../components/ui'
-import { ReceiptModal, receiptFromTx, receiptFromPayment, type ReceiptData } from '../components/Receipt'
+import { ReceiptModal, receiptFromTx, receiptFromPayment, receiptFromRegistration, type ReceiptData } from '../components/Receipt'
 import { useAuth } from '../auth'
-import { useFetch, fileUrl } from '../api'
+import { useFetch, fileUrl, api } from '../api'
 import { paths, patientApi } from '../endpoints'
 import { whenMs, type Patient, type Payment, type WalletTx } from '../data'
 
@@ -42,6 +42,16 @@ function ProfileBody({ b, refetch }: { b: Any; refetch: () => void }) {
   const isRecords = role === 'Records Officer' || role.startsWith('Hospital') || role.startsWith('Super')
   /* Activation is a Records-Officer action; the server refuses anyone else. */
   const isRecordsOfficer = role === 'Records Officer'
+
+  /* Registration receipt for this patient's KBC id — generatable anytime,
+   * after registration. The backend fills in the issuing staff from the session. */
+  const generateReceipt = async () => {
+    setBusy(true); setErr('')
+    try {
+      const r = await api.get<ReceiptData>(paths.patientReceipt(p.id))
+      setReceipt(r)
+    } catch (e2) { setErr((e2 as Error).message) } finally { setBusy(false) }
+  }
 
   /* ── Medical history: EVERY nurse & doctor entry in one timeline ──────────
      Consultations, vitals, ward rounds, medication administration, procedures,
@@ -200,6 +210,14 @@ function ProfileBody({ b, refetch }: { b: Any; refetch: () => void }) {
               </span>
             </div>
           )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button className="btn ghost sm" disabled={busy} onClick={generateReceipt}>
+              {busy ? 'Generating…' : 'Generate Receipt'}
+            </button>
+            <span className="muted" style={{ fontSize: 11 }}>
+              Registration receipt for {p.id} — view, download or print, anytime
+            </span>
+          </div>
         </div>
       </Card>
       {err && (
